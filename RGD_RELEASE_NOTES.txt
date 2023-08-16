@@ -1,0 +1,41 @@
+Radeon™ GPU Detective v1.0 Release Notes
+=======================================
+Radeon GPU Detective (RGD) is a tool for post-mortem analysis of GPU crashes (TDRs).
+Using the tool you can capture and analyze AMD GPU crash dumps and produce information that can help narrow down the search for the crash's root cause. 
+Such information includes page fault details, resource details and execution markers reflecting the GPU work that was in progress at the moments leading to the crash
+
+Highlights
+==========
+-	Reliably capture AMD GPU crash dumps (.rgd files) from your crashing DirectX® 12 applications.
+-	Reproduce GPU crashes with minimum impact on gameplay performance, and generate text or JSON crash analysis report to help narrow down the search for the crash culprit.
+-	Execution marker tree showing the GPU work that was in progress in the moments leading to the crash.
+	You can insert user markers in the application source code and these will be visualized in the crash analysis report.
+-	Page fault summary with important information:
+		a. The offending VA (virtual address).
+		b. List of all resources that resided in the offending VA during the crashing application's lifetime.
+		c. Details that can help you identify the resource such as the name (as set by ID3D12Object::SetName()), flags and other attributes.
+
+
+Explicit exclusions
+===================
+- RGD targets GPU crashes (TDRs) on Windows®. RGD will not detect pure CPU crashes (for example, CPU null pointer dereference or integer division by zero). You will need to use a CPU debugger for that. Please use CPU debugging mechanisms to investigate such cases.
+
+Known Issues
+============
+-	In certain cases, trying to capture a GPU crash dump of an app that has Microsoft® DRED enabled can lead to a system crash.
+-	In Radeon Developer Panel (RDP), it may happen that generated .rgd crash dump files appear with a wrong file size of 0 bytes.
+-	Attempting to capture GPU crash dumps on a system with a Ryzen CPU that includes integrated graphics (with no connected discrete Radeon GPU) may result in a BSOD.
+
+System Requirements
+===================
+* Operating system: Windows 10 or 11.
+
+* Latest Adrenalin Software driver (minimum version 23.7.2).
+
+* GPU: Radeon™ RX 6000 series (RDNA™2) or RX 7000 series (RDNA™3) card.
+
+* Latest RDP (Radeon Developer Panel) version, which is available as part of the Radeon Developer Tool Suite and can be downloaded from GPUOpen.com. Make sure you are using RDP v2.10.0.6 or later.
+
+Note that this version of RGD only supports DirectX® 12 applications, so you will need a DX12 application that crashes. For the best experience, it is recommended to:
+* Use string markers around render passes using the AMD GPU Services (AGS) library, as these will appear in the command line tool's output and will help identifying the code that was executing during the crash.
+* Name DX12 resources such as heaps, buffers and textures using ID3D12Object::SetName(), as these names will appear in the Page Fault Summary section of the command line tool's output file, and are critical for identifying the offending resource when applicable.

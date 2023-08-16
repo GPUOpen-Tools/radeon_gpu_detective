@@ -1,0 +1,27 @@
+//=============================================================================
+// Copyright (c) 2023 Advanced Micro Devices, Inc. All rights reserved.
+/// @author AMD Developer Tools Team
+/// @file
+/// @brief Radeon GPU Detective version header
+//=============================================================================
+
+#ifndef RGD_FRONTEND_VERSION_H_
+#define RGD_FRONTEND_VERSION_H_
+
+#define STRINGIFY_MACRO_(a) #a
+#define STRINGIFY_MACRO(a) STRINGIFY_MACRO_(a)
+#define STRINGIFY_VERSION(major, minor, patch, build) STRINGIFY_MACRO(major) "." STRINGIFY_MACRO(minor) "." STRINGIFY_MACRO(patch) "." STRINGIFY_MACRO(build)
+
+#define RGD_MAJOR_VERSION @RGD_MAJOR_VERSION@  ///< Major version number.
+#define RGD_MINOR_VERSION @RGD_MINOR_VERSION@  ///< Minor version number.
+#define RGD_PATCH_NUMBER  @RGD_PATCH_NUMBER@   ///< Patch number.
+#define RGD_BUILD_NUMBER  @RGD_BUILD_NUMBER@   ///< Build number.
+#define RGD_BUILD_SUFFIX  "@RGD_BUILD_SUFFIX@"   ///< Build suffix
+#define RGD_BUILD_DATE_STRING @DATE@
+#define RGD_BUILD_YEAR @YEAR@
+#define RGD_VERSION STRINGIFY_VERSION(RGD_MAJOR_VERSION, RGD_MINOR_VERSION, RGD_PATCH_NUMBER, RGD_BUILD_NUMBER)
+#define RGD_APP_NAME "Radeon GPU Detective"
+#define RGD_TITLE RGD_APP_NAME " " RGD_VERSION " " RGD_BUILD_SUFFIX ///< Title
+#define RGD_COPYRIGHT_STRING "Copyright (C) "RGD_BUILD_YEAR" Advanced Micro Devices, Inc. All rights reserved."
+
+#endif
