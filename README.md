@@ -1,4 +1,4 @@
-# radeon_gpu_detective
+# Radeon™ GPU Detective (RGD)
 RGD is a tool for post-mortem analysis of GPU crashes. 
 
 The tool performs offline processing of AMD GPU crash dump files and generates crash analysis reports in text and JSON formats.

@@ -3,10 +3,7 @@
 #
 # Script to fetch all external git and/or downloadable dependencies needed to build the project
 #
-#   fetch_dependencies.py (--internal)
-#
-# If --internal is specified, then any additional dependencies required for internal builds will also
-# be checked out.
+#   fetch_dependencies.py
 #
 # Each git repo will be updated to the commit specified in the "gitMapping" table.
 
@@ -162,7 +159,6 @@ if __name__ == '__main__':
 
     # parse the command line arguments
     parser = argparse.ArgumentParser(description="A script that fetches all the necessary build dependencies for the project")
-    parser.add_argument("--internal", action="store_true", help="fetch dependencies required for internal builds of the tool (only used within AMD")
     args = parser.parse_args()
 
     do_fetch_dependencies(True, args.internal)
