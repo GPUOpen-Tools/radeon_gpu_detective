@@ -98,11 +98,11 @@ html_static_path = ['_static']
 # extension during application startup. This method of using the overrides css
 # file works better with read the docs (more so than specifying it via the
 # html_context tag)
-def setup(app):
-    app.add_css_file('theme_overrides.css')
+#def setup(app):
+#    app.add_css_file('theme_overrides.css')
 
-html_show_sourcelink = False
-html_show_sphinx = False
+#html_show_sourcelink = False
+#html_show_sphinx = False
 
 
 # -- Options for HTMLHelp output ------------------------------------------
