@@ -10,7 +10,7 @@ project (RGD)
 
 # Define version information
 set(RGD_MAJOR_VERSION 1)
-set(RGD_MINOR_VERSION 0)
+set(RGD_MINOR_VERSION 1)
 set(RGD_PATCH_NUMBER 0)
 if (NOT RGD_BUILD_NUMBER)
     set(RGD_BUILD_NUMBER 0)
@@ -72,6 +72,9 @@ install(FILES RGD_RELEASE_NOTES.txt
         COMPONENT "${CPACK_PACKAGE_NAME}")
 install(DIRECTORY documentation/build/rgd
         DESTINATION ./${CPACK_PACKAGE_FILE_NAME}/help/
+        COMPONENT "${CPACK_PACKAGE_NAME}")
+install(DIRECTORY samples
+        DESTINATION ./${CPACK_PACKAGE_FILE_NAME}
         COMPONENT "${CPACK_PACKAGE_NAME}")
 
 

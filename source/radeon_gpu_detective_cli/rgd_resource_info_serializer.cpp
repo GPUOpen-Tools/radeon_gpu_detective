@@ -1046,7 +1046,7 @@ bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::BuildResourceMapFro
                     }
                 }
 
-                // Iterate through the associated resources array and add Evict event for each resource id.
+                // Iterate through the associated resources array and add Make Resident event for each resource id.
                 for (size_t array_index = 0; array_index < event_info->resource_count; array_index++)
                 {
                     RmtResourceIdentifier current_resource_id = event_info->resource_identifier_array[array_index];
@@ -1058,8 +1058,8 @@ bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::BuildResourceMapFro
                         RgdResource& current_rgd_resource = *va_info.resource_map_[current_resource_id];
 
                         // Do not add resource timeline event if resource is destroyed already.
-                        assert(current_rgd_resource.destroyed_time == 0 || current_rgd_resource.destroyed_time > event_timestamp);
-                        if (current_rgd_resource.destroyed_time == 0 || current_rgd_resource.destroyed_time > event_timestamp)
+                        assert(current_rgd_resource.destroyed_time == 0 || current_rgd_resource.destroyed_time >= event_timestamp);
+                        if (current_rgd_resource.destroyed_time == 0 || current_rgd_resource.destroyed_time >= event_timestamp)
                         {
                             // Track resource create, bind, make resident, evict or destroy event timeline for this va.
                             va_info.rgd_resource_timeline_.emplace_back(RgdResourceEventType::kMakeResident,
@@ -1113,8 +1113,8 @@ bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::BuildResourceMapFro
                         RgdResource& current_rgd_resource = *va_info.resource_map_[current_resource_id];
 
                         // Do not add resource timeline event if resource is destroyed already.
-                        assert(current_rgd_resource.destroyed_time == 0 || current_rgd_resource.destroyed_time > event_timestamp);
-                        if (current_rgd_resource.destroyed_time == 0 || current_rgd_resource.destroyed_time > event_timestamp)
+                        assert(current_rgd_resource.destroyed_time == 0 || current_rgd_resource.destroyed_time >= event_timestamp);
+                        if (current_rgd_resource.destroyed_time == 0 || current_rgd_resource.destroyed_time >= event_timestamp)
                         {
                             // Track resource create, bind, make resident, evict or destroy event timeline for this va.
                             va_info.rgd_resource_timeline_.emplace_back(RgdResourceEventType::kEvict,
@@ -1189,8 +1189,10 @@ void RgdResourceInfoSerializer::pImplResourceInfoSerializer::FindAndUpdateRmtRes
                             break;
                         }
 
-                        // Check if only one of the two resources being compared is 'Heap' resource.
-                        if ((current_resource.resource_type == kRmtResourceTypeHeap) != (next_resource.resource_type == kRmtResourceTypeHeap))
+                        // Check if only one of the two resources being compared is 'Heap' resource
+                        // And at least, one of the resources should have "NULL" resource name as implicit resource is never assigned a valid resource name.
+                        if ((current_resource.resource_type == kRmtResourceTypeHeap) != (next_resource.resource_type == kRmtResourceTypeHeap)
+                            && (current_resource.resource_name == kNullStr || next_resource.resource_name == kNullStr))
                         {
                             // If 'Heap' resource found, check if both resources have valid associated_resource_idx and they are same in size and their virtual address and base allocation address matches with each other.
                             if (current_resource.associated_resource_idx == -1
@@ -1248,7 +1250,7 @@ void RgdResourceInfoSerializer::pImplResourceInfoSerializer::ResourceHistoryToSt
 
         // Upon creation of a committed resource an implicit heap is created or upon a creation of a heap an implicit buffer is created.
         // This pair of committed resource and associated implicit resource will be consolidated and treated as one resource for default RGD output.
-        // Skip consolidating implicit resources if '--expand-implicit-resources' option is not used.
+        // Skip consolidating implicit resources if '--expand-implicit-resources' option is used.
         // associated_resource_idx holds the index of the associated RmtResource and implicit resource pair.
         // If '--expand-implicit-resource' option is used, associated_resource_idx will not be updated.
         bool is_implicit_resource = (current_resource.associated_resource_idx != -1 && current_resource.resource_type == kRmtResourceTypeHeap);

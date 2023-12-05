@@ -25,10 +25,14 @@ bool RgdParsingUtils::ParseCrashDataChunks(rdf::ChunkFile& chunk_file, const cha
 {
     bool ret = true;
     std::stringstream error_txt;
+    std::stringstream warning_txt;
     const int64_t kChunkCount = chunk_file.GetChunkCount(chunk_identifier);
 
     bool is_umd_chunk_found = false;
     bool is_kmd_chunk_found = false;
+
+    // If unknown event id is received, log the warning message only once in case multiple such events are received and continue processing next events.
+    bool is_unknown_event_id_reported = false;
 
     for (int64_t i = 0; i < kChunkCount; i++)
     {
@@ -124,7 +128,6 @@ bool RgdParsingUtils::ParseCrashDataChunks(rdf::ChunkFile& chunk_file, const cha
 
             while (bytes_read < payload_size)
             {
-                bool should_abort = false;
                 // Start by reading the event header to deduce its type.
                 RgdEvent* event_header = reinterpret_cast<RgdEvent*>(curr_crash_data.chunk_payload.data() + bytes_read);
 
@@ -185,8 +188,16 @@ bool RgdParsingUtils::ParseCrashDataChunks(rdf::ChunkFile& chunk_file, const cha
                     break;
                     default:
                         // Notify in case there is an unknown event type.
-                        error_txt << " (unknown UmdEventId: " << (uint8_t)event_id << ")" << std::endl;
-                        should_abort = true;
+                        if (!is_unknown_event_id_reported)
+                        {
+                            warning_txt << "UMD event ignored (unknown UmdEventId: " << (uint32_t)event_id << ").";
+                            is_unknown_event_id_reported = true;
+                        }
+
+                        // When new events are added by the driver, older version of RGD might see it as an 'Unknown' event.
+                        // The 'Unknown' event will be ignored and processing continues to parse next event.
+                        RgdEvent* curr_event = reinterpret_cast<RgdEvent*>(curr_crash_data.chunk_payload.data() + bytes_read);
+                        bytes_read += sizeof(DDEventHeader) + curr_event->header.eventSize;
                         assert(false);
                     }
                 }
@@ -205,14 +216,18 @@ bool RgdParsingUtils::ParseCrashDataChunks(rdf::ChunkFile& chunk_file, const cha
                     break;
                     default:
                         // Notify in case there is an unknown event type.
-                        error_txt << " (unknown KmdEventId: " << (uint8_t)event_id << ")" << std::endl;
-                        should_abort = true;
+                        if (!is_unknown_event_id_reported)
+                        {
+                            warning_txt << "KMD event is ignored (unknown KmdEventId " << (uint32_t)event_id << ").";
+                            is_unknown_event_id_reported = true;
+                        }
+
+                        // When new events are added by the driver, older version of RGD might see it as an 'Unknown' event.
+                        // The 'Unknown' event will be ignored and processing continues to parse next event.
+                        RgdEvent* curr_event = reinterpret_cast<RgdEvent*>(curr_crash_data.chunk_payload.data() + bytes_read);
+                        bytes_read += sizeof(DDEventHeader) + curr_event->header.eventSize;
                         assert(false);
                     }
-                }
-                if (should_abort)
-                {
-                    break;
                 }
             }
 
@@ -244,7 +259,12 @@ bool RgdParsingUtils::ParseCrashDataChunks(rdf::ChunkFile& chunk_file, const cha
         error_txt << ")" << std::endl;
     }
 
-    error_msg = error_txt.str();
+    if (!warning_txt.str().empty())
+    {
+        RgdUtils::PrintMessage(warning_txt.str().c_str(), RgdMessageType::kWarning, true);
+    }
+
+    error_msg = error_txt.str();  
     ret = error_msg.empty();
     return ret;
 }

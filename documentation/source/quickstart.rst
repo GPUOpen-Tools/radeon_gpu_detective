@@ -8,7 +8,7 @@ This guide will get you up and running with RGD, a tool for post-mortem GPU cras
 .. note::
    Review these requirements to make sure that this tool is relevant for your use case:
    
-   * RGD v1.0 only supports **DirectX12**.
+   * RGD v1.1 supports **DirectX12** and **Vulkan**.
    * **Windows 10 or 11**.
    * **RDNA™2** (RX 6000 series) **or RDNA™3** (RX 7000 series) card.
    * Must **TDR** (we don't catch it if there is no TDR).

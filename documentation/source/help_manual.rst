@@ -10,8 +10,8 @@ The tool allows developers to generate and analyze AMD GPU crash dumps and produ
 can help narrow down the search for a crash's root cause. Some of the information that is included in 
 the crash analysis reports that the tool generates:
 
-* Execution markers for each command buffer which was executing during the crash, pointing to render passes and draw calls.
-* For crashes that are identified as caused by a page fault the offending virtual addresses will be listed with information about all the resources that resided in the relevant address ranges.
+* Execution markers for each command buffer that was executing during the crash, pointing to render passes and draw calls.
+* The offending virtual address, along with information about all the resources that resided in the relevant address ranges, for crashes that are identified as being caused by a page fault.
 
 System requirements
 -------------------
@@ -20,11 +20,15 @@ System requirements
 * Driver: Radeon Adrenalin™ driver with Crash Analysis support.
 
 .. note::
-   * You will need a **Direct3D 12** game or other application that is crashing the GPU (currently, Direct3D 12 is the only supported API by the tool).
+   * You will need a game or other application that is crashing the GPU (currently **Direct3D 12** or **Vulkan** are the APIs supported by the tool).
    * **To make the most out of the tool**, the application should:
 
-       * Use string markers around render passes using the AMD GPU Services (AGS) library - same as supported by RGP.
-       * Name Direct3D 12 memory objects (heaps, buffers, textures) using ``ID3D12Object::SetName()``, as these strings appear in the crash analysis summary files and can help identifying the relevant resources in case of a page fault.
+       * Use string markers around render passes:
+           * D3D12: Using the AMD GPU Services (AGS) library - same as supported by RGP.
+           * Vulkan: Using the VK_EXT_debug_utils extension - functions ``vkCmdBeginDebugUtilsLabelEXT``, ``vkCmdEndDebugUtilsLabelEXT``.
+       * Name GPU resources (heaps, buffers, textures), as these strings appear in the crash analysis summary files and can help identifying the relevant resources in case of a page fault:
+           * D3D12: Using ``ID3D12Object::SetName()``.
+           * Vulkan: Using VK_EXT_debug_utils extension - function ``vkSetDebugUtilsObjectNameEXT``.
 
 Using the tool
 --------------
@@ -47,9 +51,9 @@ RGD crash analysis output files include the following information by default:
 
 * **Metadata** about the crash analysis summary file and session.
 * **System information** (CPUs, GPUs, driver, OS etc.).
-* **Execution marker tree** for each command buffer which was in flight during the crash, pointing to render passes and draw calls.
+* **Execution marker tree** for each command buffer that was in flight during the crash, pointing to render passes and draw calls.
 * **Summary of the in-progress markers** (similar to the execution marker tree, just without the hierarchy and only including execution markers that were in progress during the crash).
-* **Page fault summary** (for crashes that were determined to be caused by a page fault). Otherwise, the tool will explicitly mention that no page fault was observed.
+* **Page fault summary** for crashes that were determined to be caused by a page fault. Otherwise, the tool will explicitly mention that no page fault was observed.
 
 
 Here are some more details about the crash analysis file's contents:
@@ -77,7 +81,7 @@ This section is titled ``SYSTEM INFO`` and includes information about the system
 Markers in progress
 """""""""""""""""""
 
-This section is titled ``MARKERS IN PROGRESS`` and contains information **only** about the execution markers that were in progress during the crash for each command buffer which was determined to be in flight during the crash. 
+This section is titled ``MARKERS IN PROGRESS`` and contains information **only** about the execution markers that were in progress during the crash for each command buffer that was determined to be in flight during the crash.
 Here is an example for this section's contents::
 
     Command Buffer ID: 0x107c
@@ -164,11 +168,11 @@ The tree structure and contents are also configurable through the RDP options (o
 Page fault summary
 """"""""""""""""""
 
-In case that the crash was determined to be caused by a page fault, this section will list the offending virtual address (VA) where page fault happened. Otherwise, it will be explicitly mentioned that no page fault was detected.
+In the case that the crash was determined to be caused by a page fault, this section will list the offending virtual address (VA) where the page fault happened. Otherwise, it will be explicitly mentioned that no page fault was detected.
 
-In addition to the offending VA, this section will present information about any reseources that ever resided in this address or explicitly mention that no resources ever resided in this address during the crashing application's lifetime.
+In addition to the offending VA, this section will present information about any resources that ever resided in this address or explicitly mention that no resources ever resided in this address during the crashing application's lifetime.
 
-If the crash was detected to be caused by a page fault and resources indeed resided in the relevant VA during the crashing application's lifetime, the following sections will be added as well:
+If the crash was detected to be caused by a page fault, and resources indeed resided in the relevant VA during the crashing application's lifetime, the following sections will be added as well:
 
 **Resource timeline**
 
@@ -185,12 +189,12 @@ Here is an example of a resource timeline::
 
 The fields in the ``Resource timeline`` section are:
 
-* **Timestamp**: the timestamp of the event in ``HH:MM:SS.Ticks`` since the start of the crash analyis session.
+* **Timestamp**: the timestamp of the event in ``HH:MM:SS.Ticks`` since the start of the crash analysis session.
 * **Event type**: the type of the event (such as Create, MakeResident and Destroy).
 * **Resource type**: the type of resource (such as buffer or image).
 * **Resource identifier**: the resource ID (which is identical to that resource's ID in RMV).
 * **Resource size**: the size of the resource.
-* **Resource name**: the name of the resource (assuming that the resource was named by the developer using ``ID3D12Object::SetName()``).
+* **Resource name**: the name of the resource (assuming that the resource was named by the developer using ``ID3D12Object::SetName()`` for DX12 memory objects or using ``vkSetDebugUtilsObjectNameEXT()`` for Vulkan memory objects).
 
 **Associated resources**
 
@@ -251,18 +255,18 @@ There are generally 3 possible scenarios when interpreting the crash analysis su
      - Hang (use markers to narrow down)
 	 
 
-Let's ellaborate:
+Let's elaborate:
 
 1. If a page fault was detected and **associated resources are found**, it likely means that
-   the bug is about accessing a resource after it has been released or evicted from memory.
+   the bug is due to accessing a resource after it has been released or evicted from memory.
    An incorrect (stale or wrongly indexed) descriptor is a possible cause. It would then be a good idea to examine each of the resource's timelines:
 
-   - When resource timeline ends with ``Destroy`` event, the resource was accessed by the GPU after it has been released with D3D12 ``Release()`` call.
+   - When resource timeline ends with ``Destroy`` event, the resource was accessed by the GPU after it has been released with a D3D12 ``Release()`` call or a Vulkan equivalent call such as ``vkDestroyImage()`` call.
    - When resource timeline ends with ``Evict`` event, the resource was accessed by the GPU after it was evicted with a D3D12 ``Evict()`` call.
    - When resource timeline doesn't include ``MakeResident`` event, the resource was created as non-resident.
 
 2. If a page fault was detected but **no associated resources are found**, it likely means that
-   the GPU (e.g. a shader) tried to access memory under incorrect address, which may indicate
+   the GPU (e.g. a shader) tried to access memory at an incorrect address, which may indicate
    a bug in address calculation or indexing.
 
 3. When **no page fault was detected**, it likely means the crash was not related to memory access,
@@ -287,9 +291,9 @@ Let's ellaborate:
        00:00:06.2607520     Destroy         <Heap, Buffer>        <0xda3ce8850000014e, 0xfcf3bdca0000014f>   671088640 (640.00 MB)       VidMemBuffer
 
    
-Scope of v1.0
+Scope of v1.1
 -------------
-RGD v1.0 is designed to capture **GPU crashes** on Windows. If a GPU fault (such as memory page fault or infinite loop in a shader) causes the GPU driver to not respond to the OS for some pre-determined 
+RGD is designed to capture **GPU crashes** on Windows. If a GPU fault (such as memory page fault or infinite loop in a shader) causes the GPU driver to not respond to the OS for some pre-determined 
 time period (the default on Windows is 2 seconds), the OS will detect that and attempt to restart or remove the device. This mechanism is also known as "TDR" (Timeout Detection and Recovery) and is what we 
 consider to be a **GPU crash** for the scope of this tool.
 
@@ -297,12 +301,12 @@ From a functional user perspective, when a GPU crash happens, the screen may fla
 
 In the crashing application code, a D3D12 or DXGI function such as ``IDXGISwapChain::Present()`` will return an error code such as
 ``DXGI_ERROR_DEVICE_RESET``, ``DXGI_ERROR_DEVICE_REMOVED``, ``DXGI_ERROR_DEVICE_HUNG`` or ``DXGI_ERROR_DRIVER_INTERNAL_ERROR``,
-and the D3D12 Device object will become unusable.
+and the D3D12 Device object will become unusable. Similarly, a Vulkan function such as ``vkAcquireNextImageKHR`` will return an error code like ``VK_ERROR_DEVICE_LOST``.
 
 Note that RGD will **not detect pure CPU crashes** (for example, CPU null pointer dereference or integer division by zero). You will need to use a CPU debugger for that.
 Please use CPU debugging mechanisms like Microsoft Visual Studio to investigate such cases.
 
-Rendering code which **incorrectly uses D3D12** may also fail purely on the CPU and not reach the graphics driver or the GPU. 
+Rendering code which **incorrectly uses D3D12 or Vulkan** may also fail purely on the CPU and not reach the graphics driver or the GPU. 
 Therefore, such crashes are not captured by RGD. They usually result in ``DXGI_ERROR_INVALID_CALL`` error code returned, and 
 are usually detected by the D3D12 Debug Layer.
    
@@ -313,11 +317,12 @@ are usually detected by the D3D12 Debug Layer.
    The output of the Debug Layer is printed to the "Output" panel in Visual Studio when running the app under the debugger.
    Otherwise, it can be captured using the DebugView tool, which is part of the Sysinternals utilities that are freely available online from Microsoft®.
 
+   When programming in Vulkan, enable **Vulkan Validation Layers** and check if there are no errors or warnings reported that may be related to the bug you are investigating.
 
 Usage tips for RGD
 ------------------
 
-* **Enable the D3D12 Debug Layer before using RGD**. The D3D12 Debug Layer can catch certain errors that do not even make it to 
+* **Enable the D3D12 Debug Layer / Vulkan Validation Layers before using RGD**. The validation layers can catch certain errors that do not even make it to 
   the GPU driver or the GPU itself and are not detected by the tool. Doing so can save you a lot of time.
 
 * **Unreal Engine already supports our markers.** You just need to use Development version of the executable and enable variable ``D3D12.EmitRgpFrameMarkers=1`` in "Engine.ini" file.
@@ -331,14 +336,16 @@ Usage tips for RGD
   breadcrumb markers more accurate. To do that, follow the same steps for capturing a GPU crash dump with the relevant application. 
   This will make sure that Crash Analysis mode will be enabled in the driver when your application is run.
 
+* In Vulkan, the old device extension VK_EXT_debug_marker is also supported by RGD, but it is now deprecated in favor of the VK_EXT_debug_utils instance extension.
+
 Known issues and workarounds
 ----------------------------
 
 * **PIX markers** (``PIXBeginEvent``, ``PIXEndEvent``) are not captured by RGD. To see the hierarchy of markers around render passes, you need to use the markers from AGS library, either directly (``agsDriverExtensionsDX12_PushMarker``, ``agsDriverExtensionsDX12_PopMarker``) or using the replacement header for PIX markers provided with this package that uses them automatically. Otherwise, you would see only a flat list of draw calls. This is the same requirement as for RGP. For more information, see the RGP documentation ("User Debug Markers" chapter).
-
-* **AGS**: Only push-pop scopes are captured. Point markers (``agsDriverExtensionsDX12_SetMarker``) are ignored by RGD.
-
-* In the current version of RGD, markers that cross command list boundaries (begin on one command list, end on another one) are not handled properly and may not show up in the RGD output.
+* Only push-pop scopes are captured. Point markers in AGS library (``agsDriverExtensionsDX12_SetMarker``) are ignored by RGD, and so are point markers in Vulkan (``vkCmdInsertDebugUtilsLabelEXT``).
+* In the current version of RGD, **markers that cross command list boundaries** (begin on one command list, end on another one) are not handled properly and may not show up in the RGD output.
+* A system reboot is recommended after the **driver installation**. An invalid crash dump file may get generated when RGD workflow is executed after a fresh driver installation without a system reboot.
+* For Vulkan applications, Heap (``VkDeviceMemory``) and other resources (``VkBuffer``, ``VkImage`` etc) may get wrongly bundled together as a pair in page fault info section of the crash analysis summary output.
 
 
 
