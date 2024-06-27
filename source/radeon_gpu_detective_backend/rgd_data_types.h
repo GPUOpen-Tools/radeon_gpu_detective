@@ -11,6 +11,7 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 // RDF.
 #include "rdf/rdf/inc/amdrdf.h"
@@ -30,6 +31,9 @@ static const uint32_t kUint32Bits = 32;
 // Reserved virtual address. Used when option 'all-resources' is specified.
 static const uint64_t kVaReserved = 0x0;
 
+// Special virtual address constants.
+static const uint64_t kVaDeadBeef = 0xbeefde000000;
+
 // Output json element string name for offending va information.
 static const char* kJsonElemPageFaultSummary = "page_fault_summary";
 
@@ -40,6 +44,22 @@ static const char* kStrNotAvailable = "N/A";
 static const char* kStrHeapTypeLocal = "Local (GPU memory, CPU-visible)";
 static const char* kStrHeapTypeInvisible = "Invisible (GPU memory, invisible to CPU)";
 static const char* kStrHeapTypeHost = "Host (CPU memory)";
+
+// Driver Marker strings.
+static const char* kStrDraw = "Draw";
+static const char* kStrDispatch = "Dispatch";
+
+// Marker strings for Barriers.
+static const char* kBarrierStandard = "Barrier";
+static const char* kBarrierRelease = "Release";
+static const char* kBarrierAcquire = "Acquire";
+static const char* kBarrierReleaseEvent = "ReleaseEvent";
+static const char* kBarrierAcquireEvent = "AcquireEvent";
+static const char* kBarrierReleaseThenAcquire = "ReleaseThenAcquire";
+static const std::unordered_set<std::string> kBarrierMarkerStrings = { kBarrierStandard, kBarrierRelease, kBarrierAcquire, kBarrierReleaseEvent,kBarrierAcquireEvent, kBarrierReleaseThenAcquire};
+
+static const char* kChunkIdTraceProcessInfo = "TraceProcessInfo";
+static const uint32_t kChunkMaxSupportedVersionTraceProcessInfo = 1;
 
 // Represents the execution status of an execution marker.
 // A marker can be in a one of 3 states:
@@ -86,14 +106,17 @@ struct Config
     // Print raw timestamp in the text output.
     bool is_raw_time = false;
 
-    // Unless this flag is set to true, the tool will attempt to consolidate implicit resources into a single resource.
-    bool is_expand_implicit_resources = false;
-
     // Output compact JSON.
     bool is_compact_json = false;
 
     // Print additional system information.
     bool is_extended_sysinfo = false;
+
+    // Include implicit resources in summary output.
+    bool is_include_implicit_resources = false;
+
+    // Include internal barriers in Execution Marker Tree. Internal barriers are filtered out by default.
+    bool is_include_internal_barriers = false;
 };
 
 // Stores time information about the crash analysis session.
@@ -155,9 +178,10 @@ struct MarkerExecutionStatusFlags
 struct RgdCrashDumpContents
 {
     system_info_utils::SystemInfo system_info;
+    TraceChunkApiInfo             api_info;
     CrashData umd_crash_data;
     CrashData kmd_crash_data;
-
+    TraceProcessInfo              crashing_app_process_info;
     // Mapping between command buffer ID and the indices for umd_crash_data.events array of its relevant execution marker events.
     std::unordered_map<uint64_t, std::vector<size_t>> cmd_buffer_mapping;
 };

@@ -11,7 +11,10 @@
 #include <string>
 
 // System Info.
-#include "system_info_reader.h"
+#include "system_info_utils/source/system_info_reader.h"
+
+// Dev driver.
+#include "dev_driver/include/rgdevents.h"
 
 // Types of messages that are printed by the tool.
 enum class RgdMessageType
@@ -35,9 +38,6 @@ public:
 
     // Returns creation time of the input crash dump file.
     static std::string GetFileCreationTime(const std::string& file_name);
-
-    // Returns the full path of the matching process id.
-    static std::string GetFullPathStringForPid(const uint32_t process_id, const system_info_utils::SystemInfo& system_info);
 
     // Writes the contents into the given full text file path. Returns true on success and false otherwise.
     static bool WriteTextFile(const std::string& file_name, const std::string& contents);
@@ -63,6 +63,15 @@ public:
 
     // Format the input number to a comma separated string.
     static std::string ToFormattedNumericString(size_t  number);
+
+    // Returns the command buffer queue type string.
+    static std::string GetCmdBufferQueueTypeString(CmdBufferQueueType queue_type);
+
+    // Returns the Execution Marker API type string.
+    static std::string GetExecMarkerApiTypeString(CrashAnalysisExecutionMarkerApiType api_type);
+
+    // Returns the API string.
+    static std::string GetApiString(TraceApiType api_type);
 
 private:
     RgdUtils() = delete;

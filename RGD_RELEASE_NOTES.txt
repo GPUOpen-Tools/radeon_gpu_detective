@@ -1,4 +1,4 @@
-Radeon™ GPU Detective v1.1 Release Notes
+Radeon™ GPU Detective v1.2 Release Notes
 =======================================
 Radeon GPU Detective (RGD) is a tool for post-mortem analysis of GPU crashes (TDRs).
 Using the tool you can capture and analyze AMD GPU crash dumps and produce information that can help narrow down the search for the crash's root cause. 
@@ -6,7 +6,22 @@ Such information includes page fault details, resource details and execution mar
 
 Highlights
 ==========
--	This release adds support for Vulkan®: capture and analyze AMD GPU crash dumps (.rgd files) from crashing Vulkan applications.
+This release improves the default execution markers which are baked into the AMD drivers and provide additional information even without inserting user markers. Examples of the information added:
+
+* Index, vertex and instance counts for draw calls
+* Thread group count for compute dispatches
+* Improved default raytracing and mesh shader markers
+* Barriers
+* Queue type (Direct for graphics, Compute for compute)
+
+Example output (with a single "Frame 429" user marker):
+
+Command Buffer ID: 0x883 (Queue type: Direct)
+=============================================
+[>] "Frame 429"
+ ├─[X] Draw(VertextCount=3, InstanceCount=1)
+ ├─[X] ----------Barrier---------- 
+ └─[>] Dispatch(ThreadGroupCount=[16,16,1])
 
 Explicit exclusions
 ===================
@@ -14,14 +29,13 @@ Explicit exclusions
 
 Known Issues
 ============
--   When performing back-to-back crash analysis sessions of Vulkan applications on RDNA™2 GPUs (Radeon RX 6000 series) using RDP, you may run into a situation where the crash dump file generated is invalid. RDP will show an error
+* When performing back-to-back crash analysis sessions of Vulkan applications on RDNA™2 GPUs (Radeon RX 6000 series) using RDP, you may run into a situation where the crash dump file generated is invalid. RDP will show an error
     message saying: "Summary generation failed” and clicking on "Show error" will display a text description that ends with "execution marker information missing [UMD]". As a workaround, restart RDP. A fix for this issue will be
 	included in an upcoming driver update - there is no need to update the tool.
--	In certain cases, trying to capture a GPU crash dump of an app that has Microsoft® DRED enabled can lead to a system crash.
--	In Radeon Developer Panel (RDP), it may happen that generated .rgd crash dump files appear with a wrong file size of 0 bytes.
--	Attempting to capture GPU crash dumps on a system with a Ryzen CPU that includes integrated graphics (with no connected discrete Radeon GPU) may result in a BSOD.
--	A system reboot is recommended after the driver installation. An invalid crash dump file may get generated when RGD workflow is executed after a fresh driver installation without a system reboot.
--	For Vulkan applications, Heap (VkDeviceMemory) and other resources (VkBuffer, VkImage etc) may get wrongly bundled together as a pair in page fault info section of the crash analysis summary output.
+* In certain cases, trying to capture a GPU crash dump of an app that has Microsoft® DRED enabled can lead to a system crash.
+* In Radeon Developer Panel (RDP), it may happen that generated .rgd crash dump files appear with a wrong file size of 0 bytes.
+* Attempting to capture GPU crash dumps on a system with a Ryzen CPU that includes integrated graphics (with no connected discrete Radeon GPU) may result in a BSOD.
+* A system reboot is recommended after the driver installation. An invalid crash dump file may get generated when RGD workflow is executed after a fresh driver installation without a system reboot.
 
 System Requirements
 ===================

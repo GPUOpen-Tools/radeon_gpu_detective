@@ -12,6 +12,7 @@
 #include <string>
 #include <sstream>
 #include <cassert>
+#include <string_view>
 
 // RGD
 #include "rgd_utils.h"
@@ -55,6 +56,19 @@ static std::string MarkerExecStatusToString(MarkerExecutionStatus exec_status)
     return ret;
 }
 
+static std::string GenerateBarrierString()
+{
+    // Surround "Barrier" strings with a line to clearly separate the markers before and after the "Barrier".
+    const char* kBarrierSymbol = "----------";
+    std::stringstream ret_txt;
+    
+    ret_txt << kBarrierSymbol;
+    ret_txt << kBarrierStandard;
+    ret_txt << kBarrierSymbol;
+
+    return ret_txt.str();
+}
+
 // *** INTERNALLY-LINKED AUXILIARY FUNCTIONS - END ***
 
 void ExecMarkerTreeSerializer::PushMarkerBegin(uint64_t timestamp, uint32_t marker_value, const std::string& str)
@@ -74,6 +88,39 @@ void ExecMarkerTreeSerializer::PushMarkerBegin(uint64_t timestamp, uint32_t mark
         MarkerNode* curr_marker_node = current_stack_.back();
         curr_marker_node->child_markers.push_back(std::move(new_marker_node));
         current_stack_.push_back(&curr_marker_node->child_markers.back());
+    }
+}
+
+// Update marker info event for DrawInfo, DispatchInfo BarrierBeginInfo and BarrierEndInfo.
+void ExecMarkerTreeSerializer::UpdateMarkerInfo(uint32_t marker_value, const uint8_t info[])
+{
+    bool is_invalid_info_marker = false;
+    assert(!current_stack_.empty());
+    if (!current_stack_.empty())
+    {
+        // Marker Info event for Draw, Dispatch and Barrier is always preceded by Marker Begin event for the same marker value.
+        MarkerNode& node = *current_stack_.back();
+        assert(node.marker_value == marker_value);
+        if (node.marker_value == marker_value)
+        {
+            std::memcpy(node.marker_info, info, sizeof(node.marker_info));
+        }
+        else
+        {
+            is_invalid_info_marker = true;
+        }
+    }
+    else
+    {
+        is_invalid_info_marker = true;
+    }
+
+    if (is_invalid_info_marker)
+    {
+        // There is no matching 'ExecutionMarkerBegin' for this 'ExecutionMarkerInfo' event. 
+        std::stringstream warning_msg;
+        warning_msg << "detected an 'ExecutionMarkerInfo' event with no matching 'ExecutionMarkerBegin' event for the marker value=0x" << std::hex << marker_value << std::dec << ".";
+        RgdUtils::PrintMessage(warning_msg.str().c_str(), RgdMessageType::kWarning, true);
     }
 }
 
@@ -183,7 +230,15 @@ void ExecMarkerTreeSerializer::GenerateSummaryJson(std::vector<const MarkerNode*
                 {
                     txt << marker_stack[i]->marker_str << '/';
                 }
-                txt << marker_stack.back()->marker_str;
+                if (kBarrierMarkerStrings.find(marker_stack.back()->marker_str) != kBarrierMarkerStrings.end())
+                {
+                    // Replace barrier marker strings with standard string for the barrier marker.
+                    txt << kBarrierStandard;
+                }
+                else
+                {
+                    txt << marker_stack.back()->marker_str;
+                }
                 marker_summary_json[kJsonElemMarkers].push_back(txt.str());
             }
         }
@@ -224,8 +279,47 @@ void ExecMarkerTreeSerializer::TreeNodeToJson(const MarkerNode& node, nlohmann::
 {
     const char* kJsonElemMarkerExecStatus = "execution_status";
     const char* kJsonElemMarkerSrc = "marker_source";
+    const char* KJsonElemName = "name";
+    const char* kJsonElemIndexCount = "index_count";
+    const char* kJsonElemVertexCount = "vertex_count";
+    if (kBarrierMarkerStrings.find(node.marker_str) != kBarrierMarkerStrings.end())
+    {
+        marker_node_json[KJsonElemName] = kBarrierStandard;
+    }
+    else
+    {
+        marker_node_json[KJsonElemName] = node.marker_str;
+    }
 
-    marker_node_json["name"] = node.marker_str;
+    uint8_t* marker_info = const_cast<uint8_t*>(node.marker_info);
+    ExecutionMarkerInfoHeader* exec_marker_info_header = reinterpret_cast<ExecutionMarkerInfoHeader*>(marker_info);
+    if (exec_marker_info_header->infoType == ExecutionMarkerInfoType::Dispatch)
+    {
+        // Add thread dimensions from the dispatch info event.
+        DispatchInfo* dispatch_info = reinterpret_cast<DispatchInfo*>(marker_info + sizeof(ExecutionMarkerInfoHeader));
+        marker_node_json["thread_group_count"].push_back({
+            {"thread_x", dispatch_info->threadX},
+            {"thread_y", dispatch_info->threadY},
+            {"thread_z", dispatch_info->threadZ}
+            });
+    }
+    else if (exec_marker_info_header->infoType == ExecutionMarkerInfoType::Draw)
+    {
+        // Add the index count and instance count.
+        DrawInfo* draw_info = reinterpret_cast<DrawInfo*>(marker_info + sizeof(ExecutionMarkerInfoHeader));
+
+        // Vertex count field 'vtxIdxCount' is used for both storing vertex count when it's a non-indexed draw call and index count when it's an indexed draw call.
+        if (draw_info->drawType == CrashAnalysisExecutionMarkerApiType::CRASH_ANALYSIS_EXECUTION_MARKER_API_DRAW_INDEXED_INSTANCED)
+        {
+            marker_node_json[kJsonElemIndexCount] = draw_info->vtxIdxCount;
+        }
+        else
+        {
+            marker_node_json[kJsonElemVertexCount] = draw_info->vtxIdxCount;
+        }
+
+        marker_node_json["instance_count"] = draw_info->instanceCount;
+    }
 
     // Execution status.
     const MarkerExecutionStatus status = GetItemStatus(node);
@@ -332,7 +426,15 @@ std::string ExecMarkerTreeSerializer::GenerateSummaryString(std::vector<const Ma
                     {
                         txt << marker_stack[i]->marker_str << '/';
                     }
-                    txt << marker_stack.back()->marker_str;
+                    if (kBarrierMarkerStrings.find(marker_stack.back()->marker_str) != kBarrierMarkerStrings.end())
+                    {
+                        // Replace barrier marker strings with standard string for the barrier marker.
+                        txt << kBarrierStandard;
+                    }
+                    else
+                    {
+                        txt << marker_stack.back()->marker_str;
+                    }
 
                     if (node->consecutive_identical_nodes_count > 0)
                     {
@@ -416,9 +518,43 @@ std::string ExecMarkerTreeSerializer::TreeNodeToString(std::vector<bool> is_last
         {
             txt << "\"" << item.marker_str << "\"";
         }
+        else if (kBarrierMarkerStrings.find(item.marker_str) != kBarrierMarkerStrings.end())
+        {
+            // Following marker strings from driver are replaced with standard string "Barrier" in Execution Marker Tree output.
+            // 'Release', 'Acquire', 'ReleaseEvent', 'AcquireEvent' and 'ReleaseThenAcquire'.
+            // Example - marker string 'ReleaseThenAcquire' is replace with '----------Barrier----------'.
+            txt << GenerateBarrierString();
+        }
         else
         {
             txt << item.marker_str;
+        }
+
+        uint8_t* marker_info = const_cast<uint8_t*>(item.marker_info);
+        ExecutionMarkerInfoHeader* exec_marker_info_header = reinterpret_cast<ExecutionMarkerInfoHeader*>(marker_info);
+        if (exec_marker_info_header->infoType == ExecutionMarkerInfoType::Dispatch)
+        {
+            // Print thread dimensions from the dispatch info event.
+            DispatchInfo* dispatch_info = reinterpret_cast<DispatchInfo*>(marker_info + sizeof(ExecutionMarkerInfoHeader));
+            txt << "(ThreadGroupCount=[" << dispatch_info->threadX << "," << dispatch_info->threadY << "," << dispatch_info->threadZ << "])";
+        }
+        else if (exec_marker_info_header->infoType == ExecutionMarkerInfoType::Draw)
+        {
+            // Print the index count and instance count.
+            const char* kIndexCountStr = "IndexCount";
+            const char* kInstanceCountStr = "InstanceCount";
+            const char* kVertexCountStr   = "VertexCount";
+            std::string count_type_string = kVertexCountStr;
+
+            DrawInfo* draw_info = reinterpret_cast<DrawInfo*>(marker_info + sizeof(ExecutionMarkerInfoHeader));
+
+            // Vertex count field 'vtxIdxCount' is used for both storing vertex count when it's a non-indexed draw call and index count when it's an indexed draw call.
+            if (draw_info->drawType == CrashAnalysisExecutionMarkerApiType::CRASH_ANALYSIS_EXECUTION_MARKER_API_DRAW_INDEXED_INSTANCED)
+            {
+                count_type_string = kIndexCountStr;
+            }
+                
+            txt << "(" << count_type_string << "=" << draw_info->vtxIdxCount << ", " << kInstanceCountStr << "=" << draw_info->instanceCount << ")";
         }
 
         if (user_config.is_marker_src)

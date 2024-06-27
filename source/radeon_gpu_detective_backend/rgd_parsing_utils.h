@@ -26,7 +26,8 @@ public:
 
     // Builds a mapping between the command buffer ID and the list of execution markers (begin and end) for that
     // command buffer ID. Execution markers will be sorted chronologically.
-    static bool BuildCommandBufferMapping(const CrashData& umd_crash_data, std::unordered_map <uint64_t, std::vector<size_t>>& cmd_buffer_mapping);
+    static bool BuildCommandBufferMapping(const Config& user_config, const CrashData& umd_crash_data,
+                                          std::unordered_map<uint64_t, std::vector<size_t>>& cmd_buffer_mapping);
 
     // Returns a formatted size string for the number of bytes (KB, MB etc.).
     static std::string GetFormattedSizeString(uint64_t size_in_bytes, const char* unit = "B");
@@ -39,6 +40,9 @@ public:
 
     // Extracts the name of the marker's source which is packed into the upper 4 bits of the marker value.
     static std::string ExtractMarkerSource(uint32_t marker_value);
+
+    // Parses a TraceProcessInfo chunk.
+    static bool ParseTraceProcessInfoChunk(rdf::ChunkFile& chunk_file, const char* chunk_identifier, TraceProcessInfo& process_info);
 
 private:
     RgdParsingUtils() = delete;

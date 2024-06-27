@@ -164,7 +164,11 @@ bool RgdSerializer::ToString(const Config& user_config, const system_info_utils:
     return ret;
 }
 
-void RgdSerializer::InputInfoToString(const Config& user_config, const uint64_t crashing_process_id, const system_info_utils::SystemInfo& system_info, std::string& input_info_str)
+void RgdSerializer::InputInfoToString(const Config&                        user_config,
+                                      const TraceProcessInfo&              process_info,
+                                      const system_info_utils::SystemInfo& system_info,
+                                      const TraceChunkApiInfo& api_info,
+                                      std::string& input_info_str)
 {
     std::stringstream txt;
 
@@ -178,7 +182,9 @@ void RgdSerializer::InputInfoToString(const Config& user_config, const uint64_t 
     txt << "RGD CLI version used: " << rgd_version_string << std::endl;
     txt << "Input crash dump file creation time: " << RgdUtils::GetFileCreationTime(user_config.crash_dump_file) << std::endl;
     txt << "Input crash dump file name: " << user_config.crash_dump_file << std::endl;
-    txt << "Crashing executable full path: " << RgdUtils::GetFullPathStringForPid((uint32_t)crashing_process_id, system_info) << " (PID: " << crashing_process_id << ")" << std::endl;
+    txt << "Crashing executable full path: " << (process_info.process_path.empty() ? kStrNotAvailable : process_info.process_path)
+        << " (PID: " << process_info.process_id << ")" << std::endl;
+    txt << "API: " << RgdUtils::GetApiString(api_info.apiType) << std::endl;
     txt << std::endl;
 
     input_info_str = txt.str();
@@ -216,8 +222,97 @@ std::string RgdSerializer::EventExecMarkerBeginToString(const CrashAnalysisExecu
     ret << RgdEventHeaderToStringUmd(exec_marker_begin_event, offset_tabs) << std::endl;
     ret << offset_tabs << "Marker source: " << RgdParsingUtils::ExtractMarkerSource(exec_marker_begin_event.markerValue) << std::endl;
     ret << offset_tabs << "Command buffer ID: 0x" << std::hex << exec_marker_begin_event.cmdBufferId << std::dec << std::endl;
-    ret << offset_tabs << "Marker value: " << (exec_marker_begin_event.markerValue & kMarkerValueMask) << " (0x" << std::hex << (exec_marker_begin_event.markerValue & kMarkerValueMask) << ")" << std::endl;
+    ret << offset_tabs << "Marker value: 0x" << std::hex << exec_marker_begin_event.markerValue << std::dec << std::endl;
+    std::string marker_name = (exec_marker_begin_event.markerStringSize > 0)
+        ? std::string(reinterpret_cast<const char*>(exec_marker_begin_event.markerName), exec_marker_begin_event.markerStringSize)
+        : std::string(kStrNotAvailable);
+    ret << offset_tabs << "Marker string name: " << marker_name << std::endl;
     ret << offset_tabs << "Marker string length: " << exec_marker_begin_event.markerStringSize;
+    return ret.str();
+}
+
+std::string RgdSerializer::EventExecMarkerInfoToString(const CrashAnalysisExecutionMarkerInfo& exec_marker_info_event, const std::string& offset_tabs)
+{
+    std::stringstream ret;
+    ret << RgdEventHeaderToStringUmd(exec_marker_info_event, offset_tabs) << std::endl;
+    ret << offset_tabs << "Command buffer ID: 0x" << std::hex << exec_marker_info_event.cmdBufferId << std::dec << std::endl;
+    ret << offset_tabs << "Marker value: 0x" << std::hex << exec_marker_info_event.marker << std::dec << std::endl;
+    uint8_t* marker_info = const_cast<uint8_t*>(exec_marker_info_event.markerInfo);
+    ExecutionMarkerInfoHeader* exec_marker_info_header = reinterpret_cast<ExecutionMarkerInfoHeader*>(marker_info);
+
+    switch (exec_marker_info_header->infoType)
+    {
+    case ExecutionMarkerInfoType::CmdBufStart:
+    {
+        CmdBufferInfo* cmd_buffer_info = reinterpret_cast<CmdBufferInfo*>(marker_info + sizeof(ExecutionMarkerInfoHeader));
+        ret << offset_tabs << "Info type: " << "Command buffer start" << std::endl;
+        ret << offset_tabs << "Queue: " << uint32_t(cmd_buffer_info->queue) << std::endl;
+        ret << offset_tabs << "Queue type string: " << RgdUtils::GetCmdBufferQueueTypeString((CmdBufferQueueType)cmd_buffer_info->queue) << std::endl;
+        ret << offset_tabs << "Device ID: " << cmd_buffer_info->deviceId << std::endl;
+        ret << offset_tabs << "Queue flags: 0x" << std::hex << cmd_buffer_info->queueFlags << std::dec;
+    }
+        break;
+    case ExecutionMarkerInfoType::PipelineBind:
+    {
+        PipelineInfo* pipeline_info = reinterpret_cast<PipelineInfo*>(marker_info + sizeof(ExecutionMarkerInfoHeader));
+        ret << offset_tabs << "Info type: " << "Pipeline bind" << std::endl;
+        ret << offset_tabs << "Bind point: " << pipeline_info->bindPoint << std::endl;
+        ret << offset_tabs << "Api PSO hash: 0x" << std::hex << pipeline_info->apiPsoHash << std::dec;
+    }
+        break;
+    case ExecutionMarkerInfoType::Draw:
+    {
+        DrawInfo* draw_info = reinterpret_cast<DrawInfo*>(marker_info + sizeof(ExecutionMarkerInfoHeader));
+        ret << offset_tabs << "Info type: " << kStrDraw << std::endl;
+        ret << offset_tabs << "Draw type: " << RgdUtils::GetExecMarkerApiTypeString((CrashAnalysisExecutionMarkerApiType)draw_info->drawType) << std::endl;
+        ret << offset_tabs << "Vertex ID count: " << draw_info->vtxIdxCount << std::endl;
+        ret << offset_tabs << "Instance count: " << draw_info->instanceCount << std::endl;
+        ret << offset_tabs << "Start index: " << draw_info->startIndex << std::endl;
+        ret << offset_tabs << "Vertex offset: " << draw_info->userData.vertexOffset << std::endl;
+        ret << offset_tabs << "Instance offset: " << draw_info->userData.instanceOffset << std::endl;
+        ret << offset_tabs << "Draw ID: " << draw_info->userData.drawId;
+    }
+        break;
+    case ExecutionMarkerInfoType::DrawUserData:
+    {
+        DrawUserData* draw_user_data = reinterpret_cast<DrawUserData*>(marker_info + sizeof(ExecutionMarkerInfoHeader));
+        ret << offset_tabs << "Info type: " << "Draw user data" << std::endl;
+        ret << offset_tabs << "Vertex offset: " << draw_user_data->vertexOffset << std::endl;
+        ret << offset_tabs << "Instance offset: " << draw_user_data->instanceOffset << std::endl;
+        ret << offset_tabs << "Draw ID: " << draw_user_data->drawId;
+    }
+        break;
+    case ExecutionMarkerInfoType::Dispatch:
+    {
+        DispatchInfo* dispatch_info = reinterpret_cast<DispatchInfo*>(marker_info + sizeof(ExecutionMarkerInfoHeader));
+        ret << offset_tabs << "Info type: " << kStrDispatch << std::endl;
+        ret << offset_tabs << "Dispatch type: " << RgdUtils::GetExecMarkerApiTypeString((CrashAnalysisExecutionMarkerApiType)dispatch_info->dispatchType) << std::endl;
+        ret << offset_tabs << "X: " << dispatch_info->threadX << std::endl;
+        ret << offset_tabs << "Y: " << dispatch_info->threadY << std::endl;
+        ret << offset_tabs << "Z: " << dispatch_info->threadZ;
+    }
+        break;
+    case ExecutionMarkerInfoType::BarrierBegin:
+    {
+        BarrierBeginInfo* barrier_begin = reinterpret_cast<BarrierBeginInfo*>(marker_info + sizeof(ExecutionMarkerInfoHeader));
+        ret << offset_tabs << "Info type: " << "Barrier begin" << std::endl;
+        ret << offset_tabs << "Type: " << barrier_begin->type << std::endl;
+        ret << offset_tabs << "Reason: " << barrier_begin->reason;
+    }
+        break;
+    case ExecutionMarkerInfoType::BarrierEnd:
+    {
+        BarrierEndInfo* barrier_end = reinterpret_cast<BarrierEndInfo*>(marker_info + sizeof(ExecutionMarkerInfoHeader));
+        ret << offset_tabs << "Info type: " << "Barrier end" << std::endl;
+        ret << offset_tabs << "Pipeline stalls: " << barrier_end->pipelineStalls << std::endl;
+        ret << offset_tabs << "Layout transition: " << barrier_end->layoutTransitions << std::endl;
+        ret << offset_tabs << "Caches: " << barrier_end->caches;
+    }
+        break;
+    default:
+        assert(false);
+        break;
+    }
     return ret.str();
 }
 
@@ -227,7 +322,7 @@ std::string RgdSerializer::EventExecMarkerEndToString(const CrashAnalysisExecuti
     ret << RgdEventHeaderToStringUmd(exec_marker_event, offset_tabs) << std::endl;
     ret << offset_tabs << "Marker source: " << RgdParsingUtils::ExtractMarkerSource(exec_marker_event.markerValue) << std::endl;
     ret << offset_tabs << "Command buffer ID: 0x" << std::hex << exec_marker_event.cmdBufferId << std::dec << std::endl;
-    ret << offset_tabs << "Marker value: " << (exec_marker_event.markerValue & kMarkerValueMask) << " (0x" << std::hex << (exec_marker_event.markerValue & kMarkerValueMask) << ")" << std::dec;
+    ret << offset_tabs << "Marker value: 0x" << std::hex << exec_marker_event.markerValue << std::dec;
     return ret.str();
 }
 
@@ -275,6 +370,12 @@ static std::string SerializeRgdEventOccurrenceUmd(const RgdEventOccurrence& curr
     {
         const CrashAnalysisExecutionMarkerBegin& exec_marker_begin_event = static_cast<const CrashAnalysisExecutionMarkerBegin&>(rgd_event);
         txt << RgdSerializer::EventExecMarkerBeginToString(exec_marker_begin_event, "\t") << std::endl;
+    }
+    break;
+    case (uint8_t)UmdEventId::RgdEventExecutionMarkerInfo:
+    {
+        const CrashAnalysisExecutionMarkerInfo& exec_marker_info_event = static_cast<const CrashAnalysisExecutionMarkerInfo&>(rgd_event);
+        txt << RgdSerializer::EventExecMarkerInfoToString(exec_marker_info_event, "\t") << std::endl;
     }
     break;
     case (uint8_t)UmdEventId::RgdEventExecutionMarkerEnd:

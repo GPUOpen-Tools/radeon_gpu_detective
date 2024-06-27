@@ -8,6 +8,9 @@
 #pragma once
 #pragma pack(push,1)
 
+// RDF.
+#include "rdf/rdf/inc/amdrdf.h"
+
 /// Generic event header for Rdf Chunks
 struct DDEventProviderHeader
 {
@@ -65,13 +68,44 @@ constexpr uint32_t InitialExecutionMarkerValue = 0xFFFFAAAA;
 /// A marker that matches this value indicates the associated command buffer has completed.
 constexpr uint32_t FinalExecutionMarkerValue = 0xFFFFBBBB;
 
+/// markerInfo size as defined in devdriver/apis/events/inc/dd_event/gpu_detective/umd_crash_analysis.h.
+constexpr uint32_t MarkerInfoBufferSize = 64;
+
 /// Unique id representing each event. Each variable name of the enum value corresponds to the
 /// struct with the same name.
 enum class UmdEventId : uint8_t
 {
     RgdEventExecutionMarkerBegin = DDCommonEventId::FirstEventIdForIndividualProvider + 0,
     RgdEventExecutionMarkerEnd = DDCommonEventId::FirstEventIdForIndividualProvider + 1,
-    RgdEventCrashDebugNopData = DDCommonEventId::FirstEventIdForIndividualProvider + 2
+    RgdEventCrashDebugNopData = DDCommonEventId::FirstEventIdForIndividualProvider + 2,
+    RgdEventExecutionMarkerInfo = DDCommonEventId::FirstEventIdForIndividualProvider + 3
+};
+
+enum class ExecutionMarkerInfoType : uint8_t
+{
+    // Invalid
+    InvalidInfo = 0,
+
+    // Indicate that the header precedes a CmdBufferInfo struct.
+    CmdBufStart = 1,
+
+    // Indicate that the header precedes a PipelineInfo struct.
+    PipelineBind = 2,
+
+    // Indicate that the header precedes a DrawInfo struct.
+    Draw = 3,
+
+    // Indicate that the header precedes a DrawUserData struct.
+    DrawUserData = 4,
+
+    // Indicate that the header precedes a DispatchInfo struct.
+    Dispatch = 5,
+
+    // Indicate that the header precedes a BarrierBeginInfo struct
+    BarrierBegin = 6,
+
+    // Indicate that the header precedes a BarrierEndInfo struct
+    BarrierEnd = 7
 };
 
 /// Unique id representing each event. Each variable name of the enum value corresponds to the
@@ -164,6 +198,50 @@ struct CrashDebugNopData : RgdEvent
     uint32_t endTimestampValue;
 };
 
+/// Execution marker that provide additional information
+//
+//  The most typical use of the event is to describe an already existing ExecutionMarkerTop event.
+//  Take 'Draw' as an example, here is what the tool can expect to see
+//
+//  => ExecutionMarkerTop({marker=0x10000003, makerName="Draw"} 
+//  => ExecutionMarkerInfo({
+//          marker=0x10000003,
+//          markerInfo={ExecutionMarkerHeader({typeInfo=Draw}) + DrawInfo({drawType=...})
+//  => ExecutionMarkerBottom({marker=0x10000003})
+//
+//  A couple of things to note
+//  1. ExecutionMarkerInfo have the same markerValue as the ExecutionMarkerTop that it is describing.
+//  2. ExecutionMarkerInfo is only used inside driver so ExecutionMarkerTop(Application)+ExecutionMarkerInfo
+//     is not a possible combination. Currently, tool can expect to see back-to-back Top->Info->Bottom if Info
+//     is available. However, this may not be true when we generate timestamps for all internal calls in the future.
+//
+//  There are situations where ExecutionMarkerTop and ExecutionMarkerInfo does not have 1-to-1 relations.
+//  1. When using ExecutionMarkerInfo to provide additional info for a CmdBuffer, there will be timestamp but
+//     no ExecutionMarkerTop/ExecutionMarkerBottom events. In this case, ExecutionMarkerInfo.marker is set to
+//     0xFFFFAAAA (InitialExecutionMarkerValue).
+//  2. There will be an ExecutionMarkerInfo for PipelineBind but not timestamp generated for that because binding
+//     a pipeline does not cause any GPU work. Therefore no timestamp is needed.
+//  3. Barrier operation will have one timestamp generated but 2 different ExecutionMarkerInfo generated (BarrierBegin
+//     and BarrierEnd). Expect MarkerTop + MarkerInfo(BarrierBegin) + MarkerInfo(BarrierEnd) + MarkerBottom in this case.
+// 
+struct CrashAnalysisExecutionMarkerInfo : RgdEvent
+{
+    // Unique identifier of the relevant command buffer
+    uint32_t cmdBufferId;
+
+    /// Execution marker value (see comment in ExecutionMarkerTop). The ExecutionMarkerInfo generally describes an
+    /// existing ExecutionMarkerTop and the marker is how ExecutionMarkerInfo relates to an ExecutionMarkerTop.
+    uint32_t marker;
+
+    /// The length of `markerInfo`.
+    uint16_t markerInfoSize;
+
+    /// Used as a buffer to host additonal structural data. It should starts with ExecutionMarkerInfoHeader followed
+    /// by a data structure that ExecutionMarkerInfoHeader.infoType dictates. All the structure are tightly packed
+    /// (no paddings).
+    uint8_t markerInfo[MarkerInfoBufferSize];
+};
+
 /// Vm Pagefault Event
 struct VmPageFaultEvent : RgdEvent
 {
@@ -172,6 +250,175 @@ struct VmPageFaultEvent : RgdEvent
     uint64_t faultVmAddress;
     uint16_t processNameLength;
     char     processName[64];
+};
+
+// Header information on how to interpret the info struct
+struct ExecutionMarkerInfoHeader
+{
+    ExecutionMarkerInfoType infoType;
+};
+
+/// CmdBufferInfo follows header with ExecutionMarkerInfoType::CmdBufStart
+struct CmdBufferInfo
+{
+    // Api-specific queue family index
+    uint8_t     queue;
+
+    // Device handle in D3D12 & Vulkan
+    uint64_t    deviceId;
+
+    // 0 in D3D12. VkQueueFlagBits in Vulkan
+    uint32_t    queueFlags;
+};
+
+/// PipelineInfo follows header with ExecutionMarkerInfoType::PipelineBind
+struct PipelineInfo
+{
+    // Pal::PipelineBindPoint
+    uint32_t    bindPoint;
+
+    // Api Pipeline hash
+    uint64_t    apiPsoHash;
+};
+
+/// DrawUserData follows header with ExecutionMarkerInfoType::DrawUserData
+struct DrawUserData
+{
+    // Vertex offset (first vertex) user data register index
+    uint32_t     vertexOffset;
+
+    // Instance offset (start instance) user data register index
+    uint32_t     instanceOffset;
+
+    // Draw ID SPI user data register index
+    uint32_t     drawId;
+};
+
+/// DrawInfo follows header with ExecutionMarkerInfoType::Draw
+struct DrawInfo
+{
+    uint32_t     drawType;
+    uint32_t     vtxIdxCount;
+    uint32_t     instanceCount;
+    uint32_t     startIndex;
+    DrawUserData userData;
+};
+
+/// DispatchInfo follows header with ExecutionMarkerInfoType::Dispatch
+struct DispatchInfo
+{
+    // Api specific. RgpSqttMarkerApiType(DXCP) or RgpSqttMarkerEventType(Vulkan)
+    uint32_t    dispatchType;
+
+    // Number of thread groups in X dimension
+    uint32_t    threadX;
+
+    // Number of thread groups in Y dimension
+    uint32_t    threadY;
+
+    // Number of thread groups in Z dimension
+    uint32_t    threadZ;
+};
+
+/// BarrierBeginInfo follows header with ExecutionMarkerInfoType::BarrierBegin
+struct BarrierBeginInfo
+{
+    // Internal Barrier or external Barrier
+    bool        isInternal;
+
+    // Pal::Developer::BarrierType
+    uint32_t    type;
+
+    // Pal::Developer::BarrierReason
+    uint32_t    reason;
+};
+
+/// BarrierEndInfo follows header with ExecutionMarkerInfoType::BarrierEnd
+struct BarrierEndInfo
+{
+    // Pal::Developer::BarrierOperations.pipelineStalls
+    uint16_t    pipelineStalls;
+
+    // Pal::Developer::BarrierOperations.layoutTransitions
+    uint16_t    layoutTransitions;
+
+    // Pal::Developer::BarrierOperations.caches
+    uint16_t    caches;
+};
+
+// CmdBufferQueueType declaration is equivalent to RgpSqttMarkerQueueType and should match the values as defined in dxcp\ddi\rgpSqttMarker.h.
+// The following queue type represents the 'queue' in CmdBufferInfo struct.
+enum CmdBufferQueueType : uint32_t
+{
+    CMD_BUFFER_QUEUE_TYPE_DIRECT  = 0x0,
+    CMD_BUFFER_QUEUE_TYPE_COMPUTE = 0x1,
+    CMD_BUFFER_QUEUE_TYPE_COPY    = 0x2,
+};
+
+// CrashAnalysisExecutionMarkerApiType represents the API type for driver markers.
+// Following declaration is equivalent to RgpSqttMarkerApiType and should match the values as defined in dxcp\ddi\rgpSqttMarker.h.
+enum CrashAnalysisExecutionMarkerApiType : uint32_t
+{
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_DRAW_INSTANCED = 0x0,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_DRAW_INDEXED_INSTANCED = 0x1,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_DISPATCH = 0x2,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_COPY_RESOURCE = 0x3,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_COPY_TEXTURE_REGION = 0x4,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_COPY_BUFFER_REGION = 0x5,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_COPY_TILES = 0x6,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_ATOMIC_COPY_BUFFER_REGION = 0x7,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_CLEAR_DEPTH = 0x8,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_CLEAR_COLOR = 0x9,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_CLEAR_UAV_FLOAT = 0xa,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_CLEAR_UAV_UINT = 0xb,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_RESOLVE_SUBRESOURCE = 0xc,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_RESOLVE_SUBRESOURCE_REGION = 0xd,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_DISCARD_RESOURCE = 0xe,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_BARRIER = 0xf,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_EXECUTE_INDIRECT = 0x10,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_RESOLVE_QUERY_DATA = 0x11,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_DISPATCH_RAYS_INDIRECT = 0x12,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_DISPATCH_RAYS_UNIFIED = 0x13,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_EXECUTE_INDIRECT_RAYS_UNSPECIFIED = 0x14,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_INTERNAL_DISPATCH_BUILD_BVH = 0x15,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_RESERVED_0 = 0x16,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_DISPATCH_MESH = 0x17,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_EXECUTE_META_COMMAND = 0x18,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_INITIALIZE_META_COMMAND = 0x19,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_DISPATCH_GRAPH = 0x1a,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_INIT_GRAPH_BACKING_STORE = 0x1b,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_EXECUTE_INDIRECT_RAYS_INDIRECT = 0x1c,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_EXECUTE_INDIRECT_RAYS_UNIFIED = 0x1d,
+    CRASH_ANALYSIS_EXECUTION_MARKER_API_UNKNOWN = 0x7fff
+};
+
+// ApiInfo chunk data.
+enum class TraceApiType : uint32_t
+{
+    GENERIC    = 0,
+    DIRECTX_9  = 1,
+    DIRECTX_11 = 2,
+    DIRECTX_12 = 3,
+    VULKAN     = 4,
+    OPENGL     = 5,
+    OPENCL     = 6,
+    MANTLE     = 7,
+    HIP        = 8,
+    METAL      = 9
+};
+
+struct TraceChunkApiInfo
+{
+    TraceApiType apiType{0};
+    uint16_t     apiVersionMajor = 0;  // Major client API version
+    uint16_t     apiVersionMinor = 0;  // Minor client API version
+};
+
+// TraceProcessInfo chunk data.
+struct TraceProcessInfo
+{
+    uint32_t process_id = 0;
+    std::string process_path;
 };
 
 #pragma pack(pop)

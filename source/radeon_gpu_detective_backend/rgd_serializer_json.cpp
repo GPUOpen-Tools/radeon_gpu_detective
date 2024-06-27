@@ -34,7 +34,10 @@ static std::string GenerateCountName(const std::string& name_prefix, uint32_t in
 
 // *** INTERNALLY-LINKED AUXILIARY FUNCTIONS - END ***
 
-void RgdSerializerJson::SetInputInfo(const Config& user_config, const uint64_t crashing_process_id, const system_info_utils::SystemInfo& system_info)
+void RgdSerializerJson::SetInputInfo(const Config&                        user_config,
+                                     const TraceProcessInfo&              process_info,
+                                     const system_info_utils::SystemInfo& system_info,
+                                     const TraceChunkApiInfo&             api_info)
 {
     json_["crash_analysis_file"]["input_crash_dump_file_name"] = user_config.crash_dump_file;
     json_["crash_analysis_file"]["input_crash_dump_file_creation_time"] = RgdUtils::GetFileCreationTime(user_config.crash_dump_file);
@@ -42,8 +45,9 @@ void RgdSerializerJson::SetInputInfo(const Config& user_config, const uint64_t c
     RgdUtils::TrimLeadingAndTrailingWhitespace(RGD_TITLE, rgd_version_string);
     json_["crash_analysis_file"]["rgd_cli_version"] = rgd_version_string;
     json_["crash_analysis_file"]["json_schema_version"] = RGD_JSON_SCHEMA_VERSION;
-    json_["crash_analysis_file"]["crashing_process_id"] = crashing_process_id;
-    json_["crash_analysis_file"]["crashing_process_path"] = RgdUtils::GetFullPathStringForPid((uint32_t)crashing_process_id, system_info);
+    json_["crash_analysis_file"]["crashing_process_id"] = process_info.process_id;
+    json_["crash_analysis_file"]["crashing_process_path"] = (process_info.process_path.empty() ? kStrNotAvailable : process_info.process_path);
+    json_["crash_analysis_file"]["api"] = RgdUtils::GetApiString(api_info.apiType);
 }
 
 void RgdSerializerJson::SetSystemInfoData(const Config& user_config, const system_info_utils::SystemInfo& system_info)

@@ -64,6 +64,34 @@ static bool IsInputValid(const Config& user_config)
     return ret;
 }
 
+static void ParseApiInfoChunk(rdf::ChunkFile& chunk_file, TraceChunkApiInfo& api_info, bool is_verbose)
+{
+    const char* kChunkApiInfo = "ApiInfo";
+    const int64_t kChunkCount = chunk_file.GetChunkCount(kChunkApiInfo);
+
+    // Parse if ApiInfo chunk is present in the file. ApiChunk will not be present for the files captured with RDP 2.12 and before.
+    if (kChunkCount > 0)
+    {
+        // Only one ApiInfo chunk is expected so chunk index is set to 0 (first chunk).
+        assert(kChunkCount == 1);
+        const int64_t kChunkApiIdx = 0;
+        uint64_t payload_size = chunk_file.GetChunkDataSize(kChunkApiInfo, kChunkApiIdx);
+        assert(payload_size > 0);
+        if (payload_size > 0)
+        {
+            chunk_file.ReadChunkDataToBuffer(kChunkApiInfo, kChunkApiIdx, (void*)&api_info);
+        }
+        else
+        {
+            RgdUtils::PrintMessage("invalid chunk data size for ApiInfo chunk. Capture API type information is not available.", RgdMessageType::kError, true);
+        }
+    }
+    else
+    {
+        RgdUtils::PrintMessage("ApiInfo chunk not found.", RgdMessageType::kInfo, is_verbose);
+    }
+}
+
 static bool ParseCrashDump(const Config& user_config, RgdCrashDumpContents& contents)
 {
     std::cout << "Parsing crash dump file..." << std::endl;
@@ -84,6 +112,12 @@ static bool ParseCrashDump(const Config& user_config, RgdCrashDumpContents& cont
 
         // Parse System Info chunk.
         is_system_info_parsed = system_info_utils::SystemInfoReader::Parse(chunk_file, contents.system_info);
+
+        // If ApiInfo chunk is available, parse chunk.
+        ParseApiInfoChunk(chunk_file, contents.api_info, user_config.is_verbose);
+
+        // Parse TraceProcessInfo chunk.
+        RgdParsingUtils::ParseTraceProcessInfoChunk(chunk_file, kChunkIdTraceProcessInfo, contents.crashing_app_process_info);
     }
     catch (const std::exception& e)
     {
@@ -106,7 +140,7 @@ static bool ParseCrashDump(const Config& user_config, RgdCrashDumpContents& cont
         RgdUtils::PrintMessage("crash data parsed successfully.", RgdMessageType::kInfo, user_config.is_verbose);
 
         // Build the command buffer ID mapping.
-        ret = RgdParsingUtils::BuildCommandBufferMapping(contents.umd_crash_data, contents.cmd_buffer_mapping);
+        ret = RgdParsingUtils::BuildCommandBufferMapping(user_config, contents.umd_crash_data, contents.cmd_buffer_mapping);
         assert(ret);
         if (ret)
         {
@@ -149,7 +183,7 @@ static void SerializeTextOutput(const RgdCrashDumpContents& contents, const Conf
     std::stringstream txt;
 
     std::string input_info_str;
-    RgdSerializer::InputInfoToString(user_config, resource_serializer.GetCrashingProcessId(), contents.system_info, input_info_str);
+    RgdSerializer::InputInfoToString(user_config, contents.crashing_app_process_info, contents.system_info, contents.api_info, input_info_str);
     txt << input_info_str;
 
     std::string system_info_str;
@@ -371,7 +405,7 @@ static bool PerformCrashAnalysis(const Config& user_config)
     {
         // JSON.
         RgdSerializerJson serializer_json;
-        serializer_json.SetInputInfo(user_config, resource_serializer.GetCrashingProcessId(), contents.system_info);
+        serializer_json.SetInputInfo(user_config, contents.crashing_app_process_info, contents.system_info, contents.api_info);
 
         serializer_json.SetSystemInfoData(user_config, contents.system_info);
 
@@ -471,13 +505,14 @@ int main(int argc, char* argv[])
                 ("marker-src", "If specified, the tool's output will include the marker source information for the execution marker tree text visualization.", cxxopts::value<bool>(user_config.is_marker_src))
                 ("expand-markers", "If specified, all the marker nodes will be expanded in the execution marker tree visualization.", cxxopts::value<bool>(user_config.is_expand_markers))
                 ("compact-json", "If specified, print compact unindented JSON output. The default is pretty formatted JSON output.", cxxopts::value<bool>(user_config.is_compact_json))
+                ("internal-barriers", "If specified, include internal barriers in the execution marker tree.", cxxopts::value<bool>(user_config.is_include_internal_barriers))
                 ;
 
             opts.add_options("internal")
                 ("raw-data", "If specified, the tool's output will include the raw data of each and every event (for internal debugging purposes).", cxxopts::value<bool>(user_config.is_raw_event_data))
                 ("raw-time", "If specified, the raw timestamp will be printed in the text output.", cxxopts::value<bool>(user_config.is_raw_time))
-                ("expand-implicit-resources", "If specified, the tool will not consolidate implicit allocations. Meaning that if two resources seem to be created together with one of them not explicitly created by the developer, they will be treated as separate resources rather than a single <> pair. This option is intended for debugging purposes.", cxxopts::value<bool>(user_config.is_expand_implicit_resources))
                 ("extended-sysinfo", "If specified, the tool output will include additional system information.", cxxopts::value<bool>(user_config.is_extended_sysinfo))
+                ("implicit-res", "If specified, implicit resources will be included in the output summary file (DX12 only).", cxxopts::value<bool>(user_config.is_include_implicit_resources))
                 ;
 
             // Parse command line.

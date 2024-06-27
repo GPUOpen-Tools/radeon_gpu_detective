@@ -2,24 +2,25 @@
 # Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
 #  @author AMD Developer Tools Team
 #  @file
-#  @brief  RGD CLI CMakeLists file.
+#  @brief  RGD Backend CMakeLists file.
 #=============================================================================
 
 cmake_minimum_required (VERSION 3.10)
-project (radeon_gpu_detective_cli)
+project (rgd_backend)
+
+set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 # Include cxxopts for command line parsing.
-include_directories("${PROJECT_SOURCE_DIR}/../../external/third_party/cxxopts/include/")
 include_directories("${PROJECT_SOURCE_DIR}/../../external/")
 include_directories("${PROJECT_SOURCE_DIR}/../../external/rmv/source/parser/")
 include_directories("${PROJECT_SOURCE_DIR}/../../external/rmv/source/backend/")
 include_directories("${PROJECT_SOURCE_DIR}/../../external/third_party/")
-include_directories("${PROJECT_SOURCE_DIR}/../radeon_gpu_detective_backend/")
+include_directories("${PROJECT_SOURCE_DIR}/../../external/rdf/rdf/inc/")
 
 set(CMAKE_CXX_STANDARD 17)
 
-add_definitions(-D_USE_REAL_VA)
 # RDF.
+add_definitions(-DSYSTEM_INFO_ENABLE_RDF)
 add_definitions(-DRDF_CXX_BINDINGS)
 add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 
@@ -31,30 +32,13 @@ ELSEIF(UNIX)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=16777216")
 ENDIF(WIN32)
 
-# Source files that are common for Windows and Linux
-file(GLOB RGD_CLI_SRC
-    "*.cpp"
+# RGD backend source files that are common for Windows and Linux
+file (GLOB RGD_BACKEND_SOURCE
     "*.h"
-    "../../external/cxxopts/*.hpp"
+    "*.cpp"
+    "../../external/nlohmann/*.hpp"
 )
 
-set( RGD_WINDOWS_SRC
-    "windows/resource.h"
-    "windows/rgd.rc"
-)
+add_library(${PROJECT_NAME} STATIC ${RGD_BACKEND_SOURCE})
 
-IF (WIN32)
-    add_executable(radeon_gpu_detective_cli ${RGD_CLI_SRC} ${RGD_WINDOWS_SRC})
-ELSEIF(UNIX)
-    add_executable(radeon_gpu_detective_cli ${RGD_CLI_SRC})
-ENDIF(WIN32)
-set_target_properties(radeon_gpu_detective_cli PROPERTIES OUTPUT_NAME rgd)
-
-# Linker.
-target_link_libraries(radeon_gpu_detective_cli rgd_backend rdf RmvBackend RmvParser system_info)
-
-# Warning level.
-if(MSVC)
-  target_compile_options(radeon_gpu_detective_cli PRIVATE /W4)
-endif()
-
+set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)

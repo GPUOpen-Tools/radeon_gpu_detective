@@ -14,7 +14,7 @@
 #include "json/single_include/nlohmann/json.hpp"
 
 // System Info.
-#include "system_info_reader.h"
+#include "system_info_utils/source/system_info_reader.h"
 
 // Local.
 #include "rgd_data_types.h"
@@ -40,7 +40,10 @@ public:
     ~RgdSerializerJson() = default;
 
     // Set input information.
-    void SetInputInfo(const Config& user_config, const uint64_t crashing_process_id, const system_info_utils::SystemInfo& system_info);
+    void SetInputInfo(const Config&                        user_config,
+                      const TraceProcessInfo&              process_info,
+                      const system_info_utils::SystemInfo& system_info,
+                      const TraceChunkApiInfo&             api_info);
 
     // Serializes and sets relevant system info.
     void SetSystemInfoData(const Config& user_config, const system_info_utils::SystemInfo& system_info);

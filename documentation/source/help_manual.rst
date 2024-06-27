@@ -1,4 +1,4 @@
-.. Radeon GPU Detective Quickstart Guide
+.. _help-manual:
 
 Help Manual
 ===========
@@ -34,7 +34,7 @@ Using the tool
 --------------
 Generating AMD GPU crash dumps
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-To learn how to capture AMD GPU crash dump files (.rgd files) and generate crash analysis summary files (text/JSON), please refer to the :doc:`quickstart`.
+To learn how to capture AMD GPU crash dump files (.rgd files) and generate crash analysis summary files (text/JSON), please refer to the :ref:`quickstart-guide`.
 
 The crash analysis summary file
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -84,12 +84,12 @@ Markers in progress
 This section is titled ``MARKERS IN PROGRESS`` and contains information **only** about the execution markers that were in progress during the crash for each command buffer that was determined to be in flight during the crash.
 Here is an example for this section's contents::
 
-    Command Buffer ID: 0x107c
-    =========================
-    Frame 1040 CL0/DownSamplePS/Draw [2 repeating occurrences]
-    Frame 1040 CL0/Bloom/BlurPS/Draw [2 repeating occurrences]
-    Frame 1040 CL0/Bloom/Draw
-    Frame 1040 CL0/Bloom/BlurPS/Draw [2 repeating occurrences]
+    Command Buffer ID: 0x617
+    ========================
+    Frame 362 CL0/DownSamplePS/Draw [5 repeating occurrences]
+    Frame 362 CL0/DownSamplePS/Barrier
+    Frame 362 CL0/Bloom/BlurPS/Barrier
+    Frame 362 CL0/Bloom/BlurPS/Draw [2 repeating occurrences]
 
 Note that marker hierarchy is denoted by ``/``, forming "paths" like ``marker/marker/draw_call``, similarly to paths in the hierarchy of file systems.
 
@@ -101,39 +101,40 @@ User-provided marker strings will be wrapped in ``""``. Other markers, which are
 
 Here is an example execution marker tree::
 
-    Command Buffer ID: 0x107c
-    =========================
-    [>] "Frame 1040 CL0"
+    Command Buffer ID: 0x617 (Queue type: Direct)
+    =============================================
+    [>] "Frame 362 CL0"
      ├─[X] "Depth + Normal + Motion Vector PrePass"
      ├─[X] "Shadow Cascade Pass"
      ├─[X] "TLAS Build"
      ├─[X] "Classify tiles"
      ├─[X] "Trace shadows"
+     ├─[X] ----------Barrier----------
      ├─[X] "Denoise shadows"
      ├─[X] "GltfPbrPass::DrawBatchList"
      ├─[X] "Skydome Proc"
      ├─[X] "GltfPbrPass::DrawBatchList"
      ├─[>] "DownSamplePS"
-     │  ├─[X] Draw
-     │  ├─[X] Draw
-     │  ├─[X] Draw
-     │  ├─[>] Draw
-     │  └─[>] Draw
-     └─[>] "Bloom"
-        ├─[>] "BlurPS"
-        │  ├─[>] Draw
-        │  └─[>] Draw
-        ├─[>] Draw
-        ├─[>] "BlurPS"
-        │  ├─[>] Draw
-        │  └─[>] Draw
-        ├─[ ] Draw
-        ├─[ ] "BlurPS"
-        ├─[ ] Draw
-        ├─[ ] "BlurPS"
-        ├─[ ] Draw
-        ├─[ ] "BlurPS"
-        └─[ ] Draw
+     │  ├─[X] ----------Barrier----------
+     │  ├─[>] Draw(VertexCount=3, InstanceCount=1)
+     │  ├─[>] Draw(VertexCount=3, InstanceCount=1)
+     │  ├─[>] Draw(VertexCount=3, InstanceCount=1)
+     │  ├─[>] Draw(VertexCount=3, InstanceCount=1)
+     │  ├─[>] Draw(VertexCount=3, InstanceCount=1)
+     │  └─[>] ----------Barrier----------
+     ├─[>] "Bloom"
+     │  ├─[>] "BlurPS"
+     │  │  ├─[>] ----------Barrier----------
+     │  │  ├─[>] Draw(VertexCount=3, InstanceCount=1)
+     │  │  ├─[>] Draw(VertexCount=3, InstanceCount=1)
+     │  │  └─[ ] ----------Barrier----------
+     │  ├─[ ] ----------Barrier----------
+     │  ├─[ ] Draw(VertexCount=3, InstanceCount=1)
+     │  ├─[ ] Draw(VertexCount=3, InstanceCount=1)
+     │  ├─[ ] "BlurPS"
+     │  ├─[ ] Draw(VertexCount=3, InstanceCount=1)
+     │  └─[ ] ----------Barrier----------
+     └─[ ] "Indirect draw simple"
 
 
 The execution marker status is represented by the following symbols:
@@ -155,6 +156,14 @@ even if there are barriers between them.
    * If they are known to execute **serially with barriers between them** (e.g. screen-space postprocessing passes), then likely the first ``in progress`` marker is the one
      that was executing its shader when the crash happened.
 
+Execution marker tree features:
+
+* Thread group count is provided for compute dispatches.
+* Queue type is set to 'Direct' for graphics and 'Compute' for compute queue.
+* Vertex and instance counts are provided for draw calls.
+* Index and instance counts are provided for indexed draw calls.
+* In the text summary output, barriers are printed with dashed line to visually separate the set of markers in-between barriers.
+
 The tree structure and contents are also configurable through the RDP options (or using command line options if running the RGD command line tool directly):
 
 * Check the **Display execution marker source** checkbox (or use the ``--marker-src`` command line option) to display a suffix that specifies the component that originated the marker 
@@ -163,7 +172,7 @@ The tree structure and contents are also configurable through the RDP options (o
   Note that RGD will collapse nodes which have all of their subnodes in finished state to remove noise and improve the tree's readability.
 
 
-.. image:: images/image2023-3-17_1-32-10-Advanced.png
+.. image:: images/image2024-06-19-advanced-options.png
 
 Page fault summary
 """"""""""""""""""
@@ -272,26 +281,8 @@ Let's elaborate:
 3. When **no page fault was detected**, it likely means the crash was not related to memory access,
    but a different other type of problem, e.g. a shader hang due to timeout (too long execution) or an infinite loop.
 
-.. note::
-   When resources in the page fault summary are reported by RGD, you may notice more heaps and buffers than you explicitly created.
-   This is due to the way the the D3D12 runtime and the AMD graphics driver work at the low-level,
-   which can be slightly different than what seems by looking at the D3D12 API.
-   In D3D12, there are 3 types of resources: committed, placed, and reserved:
    
-   * For every committed resource created using D3D12 ``CreateCommittedResource()``, an implicit, unnamed, heap is also created in the same virtual address and in the same size.
-   * For every heap explicitly created using D3D12 ``CreateHeap()``, an implicit, unnamed, buffer is also created, spanning the entire heap. Also here, the heap and the implicit buffer will have the same virtual address and size. Placed resources created in the heap will alias the same memory with that buffer.
-   
-   In both cases, RGD will treat the pair of implicit and explicit resources as a single entity surrounded by ``<>``::
-   
-       Timestamp            Event type      Resource type         Resource identifier                        Resource size               Resource name
-       ---------            ----------      -------------         -------------------                        -------------               -------------
-       00:00:00.7989056     Create          <Heap, Buffer>        <0xda3ce8850000014e, 0xfcf3bdca0000014f>   671088640 (640.00 MB)       VidMemBuffer
-       00:00:00.8009888     Bind            <Heap, Buffer>        <0xda3ce8850000014e, 0xfcf3bdca0000014f>   671088640 (640.00 MB)       VidMemBuffer
-       00:00:00.8009888     Make Resident   <Heap, Buffer>        <0xda3ce8850000014e, 0xfcf3bdca0000014f>   671088640 (640.00 MB)       VidMemBuffer
-       00:00:06.2607520     Destroy         <Heap, Buffer>        <0xda3ce8850000014e, 0xfcf3bdca0000014f>   671088640 (640.00 MB)       VidMemBuffer
-
-   
-Scope of v1.1
+Scope of v1.2
 -------------
 RGD is designed to capture **GPU crashes** on Windows. If a GPU fault (such as memory page fault or infinite loop in a shader) causes the GPU driver to not respond to the OS for some pre-determined 
 time period (the default on Windows is 2 seconds), the OS will detect that and attempt to restart or remove the device. This mechanism is also known as "TDR" (Timeout Detection and Recovery) and is what we 
@@ -316,6 +307,8 @@ are usually detected by the D3D12 Debug Layer.
    make sure there are no errors (and preferably no warnings) reported before using more advanced tools, like RGD.
    The output of the Debug Layer is printed to the "Output" panel in Visual Studio when running the app under the debugger.
    Otherwise, it can be captured using the DebugView tool, which is part of the Sysinternals utilities that are freely available online from Microsoft®.
+
+   In Unreal Engine, you can enable it using ``-d3ddebug`` command-line parameter.
 
    When programming in Vulkan, enable **Vulkan Validation Layers** and check if there are no errors or warnings reported that may be related to the bug you are investigating.
 
@@ -345,7 +338,6 @@ Known issues and workarounds
 * Only push-pop scopes are captured. Point markers in AGS library (``agsDriverExtensionsDX12_SetMarker``) are ignored by RGD, and so are point markers in Vulkan (``vkCmdInsertDebugUtilsLabelEXT``).
 * In the current version of RGD, **markers that cross command list boundaries** (begin on one command list, end on another one) are not handled properly and may not show up in the RGD output.
 * A system reboot is recommended after the **driver installation**. An invalid crash dump file may get generated when RGD workflow is executed after a fresh driver installation without a system reboot.
-* For Vulkan applications, Heap (``VkDeviceMemory``) and other resources (``VkBuffer``, ``VkImage`` etc) may get wrongly bundled together as a pair in page fault info section of the crash analysis summary output.
 
 
 

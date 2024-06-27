@@ -28,3 +28,7 @@ THE SOFTWARE.
 **nlohmann/json**
 
 Copyright © 2013-2018 Niels Lohmann
+
+**Catch2**
+
+Boost Software License - Version 1.0 - August 17th, 2003

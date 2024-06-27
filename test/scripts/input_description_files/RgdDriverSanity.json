@@ -1,0 +1,22 @@
+{
+	"DX12": [
+		{
+			"test_name": "NullCBV",
+			"crash_test_case": 17,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "ReleaseTextureSRV",
+			"crash_test_case": 22,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		}
+	]
+}

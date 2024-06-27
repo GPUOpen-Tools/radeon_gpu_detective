@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cinttypes>
 #include <unordered_set>
+#include <algorithm>
 
 // RGD local.
 #include "rgd_utils.h"
@@ -41,7 +42,6 @@ bool RgdParsingUtils::ParseCrashDataChunks(rdf::ChunkFile& chunk_file, const cha
         uint64_t payload_size = chunk_file.GetChunkDataSize(chunk_identifier, (int)i);
         assert(payload_size > 0);
 
-        // TODO: confirm values with driver team.
         const uint32_t kProviderIdKmd = 0xE43C9C8E;
         const uint32_t kProviderIdUmd = 0x50434145;
         const uint32_t kProviderIdInvalid = 0xFFF;
@@ -186,6 +186,19 @@ bool RgdParsingUtils::ParseCrashDataChunks(rdf::ChunkFile& chunk_file, const cha
                         bytes_read += sizeof(CrashDebugNopData);
                     }
                     break;
+                    case UmdEventId::RgdEventExecutionMarkerInfo:
+                    {
+                        CrashAnalysisExecutionMarkerInfo* curr_event = reinterpret_cast<CrashAnalysisExecutionMarkerInfo*>(curr_crash_data.chunk_payload.data() + bytes_read);
+                        current_time += (curr_event->header.delta * (uint64_t)timeUnit);
+
+                        // Ignore this event if the command buffer id is in discard set.
+                        if (discarded_cmd_buffer_ids_set.find(curr_event->cmdBufferId) == discarded_cmd_buffer_ids_set.end())
+                        {
+                            curr_crash_data.events.push_back(RgdEventOccurrence(curr_event, current_time));
+                        }
+                        bytes_read += sizeof(DDEventHeader) + curr_event->header.eventSize;
+                    }
+                    break;
                     default:
                         // Notify in case there is an unknown event type.
                         if (!is_unknown_event_id_reported)
@@ -269,8 +282,7 @@ bool RgdParsingUtils::ParseCrashDataChunks(rdf::ChunkFile& chunk_file, const cha
     return ret;
 }
 
-bool RgdParsingUtils::BuildCommandBufferMapping(const CrashData& umd_crash_data, std::unordered_map <uint64_t,
-    std::vector<size_t>>& cmd_buffer_mapping)
+bool RgdParsingUtils::BuildCommandBufferMapping(const Config& user_config, const CrashData& umd_crash_data, std::unordered_map<uint64_t, std::vector<size_t>>& cmd_buffer_mapping)
 {
     const uint32_t kApplicationMarkerValueOne = 1;
     bool ret = !umd_crash_data.events.empty();
@@ -312,6 +324,55 @@ bool RgdParsingUtils::BuildCommandBufferMapping(const CrashData& umd_crash_data,
             {
                 const CrashAnalysisExecutionMarkerEnd& exec_marker_end_event = static_cast<const CrashAnalysisExecutionMarkerEnd&>(*curr_event.rgd_event);
                 cmd_buffer_id = exec_marker_end_event.cmdBufferId;
+
+                if (is_command_buffer_in_flight.find(cmd_buffer_id) != is_command_buffer_in_flight.end())
+                {
+                    if (is_command_buffer_in_flight[cmd_buffer_id])
+                    {
+                        // Internal driver barrier markers should be filtered out.
+                        // First check if an 'End' event is received for an internal barrier marker. If yes, remove the relevant 'Begin' event from the cmd_buffer_mapping.
+                        bool is_internal_barrier = false;
+                        size_t previous_event_idx = cmd_buffer_mapping[cmd_buffer_id].back();
+                        const RgdEventOccurrence& previous_event_occurrence = umd_crash_data.events[previous_event_idx];
+                        UmdEventId event_id = static_cast<UmdEventId>(previous_event_occurrence.rgd_event->header.eventId);
+
+                        // Check if an event before the current event is 'ExecutionMarkerBegin' event and if it is an event for the Barrier marker.
+                        if (event_id == UmdEventId::RgdEventExecutionMarkerBegin)
+                        {
+                            const CrashAnalysisExecutionMarkerBegin& marker_begin =
+                                static_cast<const CrashAnalysisExecutionMarkerBegin&>(*previous_event_occurrence.rgd_event);
+                            uint32_t previous_event_marker_value = marker_begin.markerValue;
+                            std::string marker_string = (marker_begin.markerStringSize > 0)
+                                ? std::string(reinterpret_cast<const char*>(marker_begin.markerName), marker_begin.markerStringSize)
+                                : std::string(kStrNotAvailable);
+
+                            // Is this a Barrier Begin marker? Barrier is considered "Internal" when there is no associated "CrashAnalysisExecutionMarkerInfo" event.
+                            // External Barrier marker events are received as: Execution marker Begin (with one of the marker strings from kBarrierMarkerStrings) -> Barrier Begin Info -> Barrier End Info -> Execution marker End.
+                            // Internal Barrier marker events are received as: Execution marker Begin -> Execution marker End. Notice, there is no "Info" events for interna Barrier marker events.
+                            // If "--internal-barriers" option is used, then do not filter out internal barrier markers.
+                            if (!user_config.is_include_internal_barriers
+                                && kBarrierMarkerStrings.find(marker_string) != kBarrierMarkerStrings.end()
+                                && previous_event_marker_value == exec_marker_end_event.markerValue)
+                            {
+                                // It is a Barrier Begin marker without intermediate "Info" event. So this is an internal barrier.
+                                // Ignore internal barrier marker events. Remove the 'Begin' event for this internal barrier.
+                                cmd_buffer_mapping[cmd_buffer_id].pop_back();
+                                is_internal_barrier = true;
+                            }
+                        }
+
+                        if (!is_internal_barrier)
+                        {
+                            // Add this marker to the relevant command buffer ID's vector.
+                            cmd_buffer_mapping[cmd_buffer_id].push_back(i);
+                        }
+                    }
+                }
+            }
+            else if (static_cast<UmdEventId>(curr_event.rgd_event->header.eventId) == UmdEventId::RgdEventExecutionMarkerInfo)
+            {
+                const CrashAnalysisExecutionMarkerInfo& exec_marker_info_event = static_cast<const CrashAnalysisExecutionMarkerInfo&>(*curr_event.rgd_event);
+                cmd_buffer_id = exec_marker_info_event.cmdBufferId;
 
                 if (is_command_buffer_in_flight.find(cmd_buffer_id) != is_command_buffer_in_flight.end())
                 {
@@ -368,6 +429,9 @@ std::string RgdParsingUtils::UmdRgdEventIdToString(uint8_t event_id)
         break;
     case (uint8_t)UmdEventId::RgdEventExecutionMarkerBegin:
         ret << "EXEC MARKER BEGIN";
+        break;
+    case (uint8_t)UmdEventId::RgdEventExecutionMarkerInfo:
+        ret << "EXEC MARKER INFO";
         break;
     case (uint8_t)UmdEventId::RgdEventExecutionMarkerEnd:
         ret << "EXEC MARKER END";
@@ -475,5 +539,78 @@ std::string RgdParsingUtils::GetFormattedSizeString(uint64_t size_in_bytes, cons
     {
         ret = "0";
     }
+    return ret;
+}
+
+bool RgdParsingUtils::ParseTraceProcessInfoChunk(rdf::ChunkFile& chunk_file, const char* chunk_identifier, TraceProcessInfo& process_info)
+{
+    bool              ret = true;
+    const int64_t     kChunkCount = chunk_file.GetChunkCount(chunk_identifier);
+    const int64_t     kChunkIdx = 0;
+    const char*       kErrorMsg   = "failed to extract crashing process information";
+    std::stringstream error_txt;
+
+    // Parse if TraceProcessInfo chunk is present in the file. TraceProcessInfo will not be present for the files captured with RDP 3.0 and before.
+    if (kChunkCount > 0)
+    {
+        const uint32_t kChunkVersion = chunk_file.GetChunkVersion(chunk_identifier);
+        if (kChunkVersion <= kChunkMaxSupportedVersionTraceProcessInfo)
+        {
+            // Only one TraceProcessInfo chunk is expected so chunk index is set to 0 (first chunk).
+            assert(kChunkCount == 1);
+            uint64_t             payload_size = chunk_file.GetChunkDataSize(chunk_identifier, kChunkIdx);
+            std::vector<uint8_t> payload_data(payload_size, 0);
+            if (payload_size > 0)
+            {
+                // Read the TraceProcessInfo chunk payload data.
+                chunk_file.ReadChunkDataToBuffer(chunk_identifier, kChunkIdx, payload_data.data());
+
+                // TraceProcessInfo chunk format is defined in rdf/docs/internal/chunkFormats/traceProcessInfoChunkSpec.md.
+                // struct TraceProcessInfo {
+                //     uint32_t process_id;
+                //     uint32_t process_path_size;  // Length of the path including the null terminator.
+                //     char     process_path[1];    // byte-array representing the process path, null-terminated.
+                // }
+
+                std::copy(payload_data.begin(), payload_data.begin() + sizeof(process_info.process_id), reinterpret_cast<uint8_t*>(&process_info.process_id));
+                uint32_t process_path_size = 0;
+                std::copy(payload_data.begin() + sizeof(process_info.process_id),
+                            payload_data.begin() + sizeof(process_info.process_id) + sizeof(process_path_size),
+                            reinterpret_cast<uint8_t*>(&process_path_size));
+                assert(process_path_size != 0);
+                if (process_path_size != 0)
+                {
+                    // Process path is a null terminated char string. Copy the path string without the null char.
+                    process_path_size -= 1;
+                    std::copy(payload_data.begin() + sizeof(process_info.process_id) + sizeof(process_path_size),
+                                payload_data.begin() + sizeof(process_info.process_id) + sizeof(process_path_size) + process_path_size,
+                                std::back_inserter(process_info.process_path));
+                }
+                else
+                {
+                    error_txt << kErrorMsg << " (crashing process path information missing)";
+                    RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+                }
+            }
+            else
+            {
+                error_txt << kErrorMsg << " (invalid chunk payload size [" << kChunkIdTraceProcessInfo << "])";
+                RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+            }
+        }
+        else
+        {
+            error_txt << kErrorMsg << " (unsupported chunk version: " << kChunkVersion << " [" << kChunkIdTraceProcessInfo << "])";
+            RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+        }
+    }
+    else
+    {
+        error_txt << kErrorMsg << " (crashing process information missing [" << kChunkIdTraceProcessInfo << "])";
+        RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+    }
+
+    ret = error_txt.str().empty();
+
     return ret;
 }

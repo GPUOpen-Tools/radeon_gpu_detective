@@ -10,6 +10,9 @@
 // Local.
 #include "rgd_exec_marker_tree_serializer.h"
 
+// Dev driver.
+#include "dev_driver/include/rgdevents.h"
+
 static const char* kJsonElemExecutionMarkerTree = "execution_marker_tree";
 static const char* kJsonElemMarkersInProgress = "markers_in_progress";
 static const char* kJsonElemExecutionMarkerStatusReport = "execution_marker_status_report";
@@ -60,6 +63,9 @@ private:
 
     // Map to store command buffer id -> ExecMarkerTreeSerializer mapping.
     std::unordered_map <uint64_t, std::unique_ptr<ExecMarkerTreeSerializer>> command_buffer_exec_tree_;
+
+    // Map to store command buffer info.
+    std::unordered_map<uint64_t, CmdBufferInfo> cmd_buffer_info_map_;
 };
 
 #endif // RADEON_GPU_DETECTIVE_MARKER_DATA_SERIALIZER_H_

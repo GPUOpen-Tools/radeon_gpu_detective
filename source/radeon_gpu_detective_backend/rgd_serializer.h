@@ -12,7 +12,7 @@
 #include <unordered_map>
 
 // System Info.
-#include "system_info_reader.h"
+#include "system_info_utils/source/system_info_reader.h"
 #include "dev_driver/include/rgdevents.h"
 
 // Local.
@@ -26,7 +26,11 @@ public:
     static bool ToString(const Config& user_config, const system_info_utils::SystemInfo& system_info, std::string& system_info_txt);
 
     // Serialize the input parameters information into a string.
-    static void InputInfoToString(const Config& user_config, const uint64_t crashing_process_id, const system_info_utils::SystemInfo& system_info, std::string& input_info_str);
+    static void InputInfoToString(const Config&                        user_config,
+                                  const TraceProcessInfo&              process_info,
+                                  const system_info_utils::SystemInfo& system_info,
+                                  const TraceChunkApiInfo&             api_info,
+                                  std::string&                         input_info_str);
 
     // Generates a string representing the RgdEvent's header for Umd event, with each line being pushed with the offset tabs.
     static std::string RgdEventHeaderToStringUmd(const RgdEvent& rgd_event, const std::string& offset_tabs);
@@ -37,6 +41,7 @@ public:
     // Serializes the given RGD event into a string with offset being
     static std::string EventTimestampToString(const TimestampEvent& timestamp_event, const std::string& offset_tabs);
     static std::string EventExecMarkerBeginToString(const CrashAnalysisExecutionMarkerBegin& exec_marker_event, const std::string& offset_tabs);
+    static std::string EventExecMarkerInfoToString(const CrashAnalysisExecutionMarkerInfo& exec_marker_event, const std::string& offset_tabs);
     static std::string EventExecMarkerEndToString(const CrashAnalysisExecutionMarkerEnd& exec_marker_event, const std::string& offset_tabs);
     static std::string EventDebugNopToString(const CrashDebugNopData& debug_nop_event, const std::string& offset_tabs);
     static std::string EventVmPageFaultToString(const VmPageFaultEvent& page_fault_event, const std::string& offset_tabs);

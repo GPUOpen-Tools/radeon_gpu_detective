@@ -11,6 +11,9 @@
 #include <string>
 #include <unordered_map>
 
+// Dev driver.
+#include "dev_driver/include/rgdevents.h"
+
 // Local.
 #include "rgd_data_types.h"
 
@@ -21,7 +24,7 @@
 struct MarkerNode
 {
     MarkerNode(uint64_t begin_timestamp, uint32_t value, const std::string& str) :
-        timestamp_begin_(begin_timestamp), marker_str(str), marker_value(value) {}
+        timestamp_begin_(begin_timestamp), marker_str(str), marker_value(value), marker_info{} {}
     uint64_t timestamp_begin_ = 0;
     uint64_t timestamp_end_ = 0;
 
@@ -33,6 +36,11 @@ struct MarkerNode
 
     // Execution status.
     MarkerExecutionStatus exec_status = MarkerExecutionStatus::kNotStarted;
+
+    /// Used as a buffer to host additional structural data for DrawInfo, DispatchInfo, BarrierBeginInfo and BarrierEndInfo. It should start with ExecutionMarkerInfoHeader followed
+    /// by a data structure that ExecutionMarkerInfoHeader.infoType dictates. All the structures are tightly packed
+    /// (no paddings).
+    uint8_t marker_info[MarkerInfoBufferSize] = { 0 };
 
     // Child markers (markers that started after this marker began and before it ended).
     std::vector<MarkerNode> child_markers;
@@ -57,10 +65,13 @@ public:
         cmd_buffer_exec_status_{ cmd_buffer_exec_buffer },
         kmd_crash_value_begin_{ kmd_crash_value_begin },
         kmd_crash_value_end_{ kmd_crash_value_end },
-        is_file_visualization_(!user_config.output_file_txt.empty()){}
+        is_file_visualization_(!user_config.output_file_txt.empty()) {}
 
     // Insert a Begin marker into the tree.
     void PushMarkerBegin(uint64_t timestamp, uint32_t marker_value, const std::string& str);
+
+    // Update Begin marker info.
+    void UpdateMarkerInfo(uint32_t marker_value, const uint8_t info[]);
 
     // Insert an End marker into the tree.
     void PushMarkerEnd(uint64_t timestamp, uint32_t marker_value);

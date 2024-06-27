@@ -53,11 +53,6 @@ public:
     /// @return true if Rmt dataset handle initialization is successful; false otherwise.
     bool InitializeWithTraceFile(const std::string& trace_file_path);
 
-    /// @brief Get crashing applications process id.
-    ///
-    /// @return crashing applications process id.
-    uint64_t GetCrashingProcessId() const;
-
 private:
 
     class pImplResourceInfoSerializer;

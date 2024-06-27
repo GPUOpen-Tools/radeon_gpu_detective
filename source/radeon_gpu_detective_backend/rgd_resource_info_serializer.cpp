@@ -273,8 +273,29 @@ struct RgdResourceTimeline
 
 struct RgdResource
 {
+    union
+    {
+        // Valid when resourceType is kRmtResourceTypeImage.
+        RmtResourceDescriptionImage image{0};
+
+        // Valid when is kRmtResourceTypeBuffer.
+        RmtResourceDescriptionBuffer buffer;
+
+        // Valid when resourceType is kRmtResourceTypePipeline.
+        RmtResourceDescriptionPipeline pipeline;
+
+        // Valid when resourceType is kRmtResourceTypeGpuEvent.
+        RmtResourceDescriptionGpuEvent gpu_event;
+
+        // Valid when resourceType is RMT_RESOURCE_TYPE_COMMAND_ALLOCATOR.
+        RmtResourceDescriptionCommandAllocator command_allocator;
+    };
+
     // The resource name.
     std::string resource_name;
+
+    // Resource timeline event indices for the resource.
+    std::vector<size_t> timeline_indices;
 
     // A GUID for this resource.
     RmtResourceIdentifier rmv_identifier = 0;
@@ -283,9 +304,6 @@ struct RgdResource
     // If there exists an implicit resource created along with this resource,
     // associated_resource_idx will store the index of pairing resource.
     intmax_t associated_resource_idx = -1;
-
-    // Resource timeline event indices for the resource.
-    std::vector<size_t>   timeline_indices;
 
     // The time the resource was destroyed.
     uint64_t              destroyed_time = 0;
@@ -311,24 +329,8 @@ struct RgdResource
     // The type of the resource.
     RmtResourceType       resource_type;
 
-    union
-    {
-        // Valid when resourceType is kRmtResourceTypeImage.
-        RmtResourceDescriptionImage    image{ 0 };
-
-        // Valid when is kRmtResourceTypeBuffer.
-        RmtResourceDescriptionBuffer   buffer;
-
-        // Valid when resourceType is kRmtResourceTypePipeline.
-        RmtResourceDescriptionPipeline pipeline;
-
-        // Valid when resourceType is kRmtResourceTypeGpuEvent.
-        RmtResourceDescriptionGpuEvent gpu_event;
-
-        // Valid when resourceType is RMT_RESOURCE_TYPE_COMMAND_ALLOCATOR.
-        RmtResourceDescriptionCommandAllocator
-            command_allocator;
-    };
+    // Is implicit resource?
+    bool is_implicit = false;
 };
 
 
@@ -366,18 +368,20 @@ public:
 
     /// @brief Serialize resource info from resource_map_ to string.
     ///
+    /// @param [in]  user_config The user configuration.
     /// @param [in]  virtual_address    The Gpu address.
     /// @param [out] resource_info_text Serialized resource information string.
-    void ResourceHistoryToString(const uint64_t virtual_address,
+    void ResourceHistoryToString(const Config& user_config, const uint64_t virtual_address,
         std::string& resource_info_text);
 
     /// @brief Resource history info from resource_map to json.
     ///
+    /// @param [in]  user_config The user configuration.
     /// @param [in]  virtual_address    The Gpu address.
     /// @param [out] resource_info_json The resource info json.
     ///
     /// @return true when resource history JSON is built successfully; false otherwise.
-    bool ResourceHistoryToJson(const uint64_t virtual_address,
+    bool ResourceHistoryToJson(const Config& user_config, const uint64_t virtual_address,
         nlohmann::json& resource_info_json);
 
     /// @brief Build resource history from a memory event history.
@@ -406,9 +410,10 @@ public:
 
     /// @brief Generate resource timeline.
     ///
+    /// @param [in] user_config     The input user configuration.
     /// @param [in]  virtual_address   The Gpu address.
     /// @param [out] resource_timeline The resource timeline.
-    void GenerateResourceTimeline(const uint64_t virtual_address, std::string& resource_timeline);
+    void GenerateResourceTimeline(const Config& user_config, const uint64_t virtual_address, std::string& resource_timeline);
 
     /// @brief Get the offset of the resource virtual address from allocation base address.
     ///
@@ -442,11 +447,6 @@ public:
     /// @return raw or real time string.
     std::string GetTimestampString(const uint64_t timestamp);
 
-    /// @brief Get the crashing applications process id.
-    ///
-    /// @return the crashing applications process id.
-    uint64_t GetTargetProcessId() const;
-
     // Map to store virtual address specific information.
     std::unordered_map<RmtGpuAddress, std::unique_ptr<RgdVaInfo>> va_info_map_;
 
@@ -460,11 +460,6 @@ private:
     ///
     /// @param [in] cpu_frequency The cpu frequency of the crash analysis session from the input crash dump file.
     void SetCpuFrequency(const uint64_t cpu_frequency);
-
-    /// @brief Set the crashing applications process id.
-    ///
-    /// @param [in] target_process_id The process id.
-    void SetTargetProcessId(const uint64_t target_process_id);
 
     /// @brief Find and update the associated Rmt resource and its implicit resource pair.
     ///
@@ -490,9 +485,6 @@ private:
 
     // Frequency of timestamps in Rmt data chunk.
     uint64_t cpu_frequency_ = 0;
-
-    // The crashing application process ID that was traced.
-    uint64_t target_process_id_ = 0;
 };
 
 void RgdVaInfo::SortResourceTimeline()
@@ -567,9 +559,6 @@ bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::InitializeDataSet(c
 
         // Set cpu frequency of the crash analysis session (used for converting raw timestamp to real time).
         SetCpuFrequency(RmtTraceLoaderGetDataSet()->cpu_frequency);
-
-        // Set the crashing applications process id.
-        SetTargetProcessId(RmtTraceLoaderGetDataSet()->target_process_id);
     }
 
     return result;
@@ -656,12 +645,6 @@ bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::BuildResourceHistor
             assert(false);
             result = false;
         }
-
-        if (result && !user_config.is_expand_implicit_resources)
-        {
-            // Find and update the associated implicit heap and RmtResource pair if exists.
-            FindAndUpdateRmtResourceAndImplicitHeapPair(virtual_address);
-        }
     }
     return result;
 }
@@ -684,11 +667,6 @@ bool RgdResourceInfoSerializer::InitializeWithTraceFile(const std::string& trace
     result = resource_info_serializer_impl_->InitializeDataSet(trace_file_path);
 
     return result;
-}
-
-uint64_t RgdResourceInfoSerializer::GetCrashingProcessId() const
-{
-    return resource_info_serializer_impl_->GetTargetProcessId();
 }
 
 bool RgdResourceInfoSerializer::GetVirtualAddressHistoryInfo(const Config& user_config, const uint64_t virtual_address, nlohmann::json& out_json)
@@ -714,7 +692,7 @@ bool RgdResourceInfoSerializer::GetVirtualAddressHistoryInfo(const Config& user_
             {
                 out_json[kJsonElemPageFaultSummary]["va_timeline"] = resource_info_serializer_impl_->va_info_map_[virtual_address]->va_residency_json_;
             }
-            result = resource_info_serializer_impl_->ResourceHistoryToJson(virtual_address, out_json);
+            result = resource_info_serializer_impl_->ResourceHistoryToJson(user_config, virtual_address, out_json);
         }
         else
         {
@@ -757,11 +735,11 @@ bool RgdResourceInfoSerializer::GetVirtualAddressHistoryInfo(const Config& user_
 
             // Add resource create, bind and destroy events timeline.
             std::string resource_timeline;
-            resource_info_serializer_impl_->GenerateResourceTimeline(virtual_address, resource_timeline);
+            resource_info_serializer_impl_->GenerateResourceTimeline(user_config, virtual_address, resource_timeline);
             resource_info_text += resource_timeline;
 
             // Add resource history events info to output string.
-            resource_info_serializer_impl_->ResourceHistoryToString(virtual_address, resource_info_text);
+            resource_info_serializer_impl_->ResourceHistoryToString(user_config, virtual_address, resource_info_text);
         }
         else
         {
@@ -820,6 +798,7 @@ bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::BuildResourceMapFro
                 if (va_info.resource_map_[event_info->resource_identifier] != nullptr)
                 {
                     RgdResource& rgd_resource = *va_info.resource_map_[event_info->resource_identifier];
+                    size_t current_resource_list_idx = va_info.resource_list_.size();
                     va_info.resource_list_.push_back(va_info.resource_map_[event_info->resource_identifier]);
 
                     if (event_info->name != nullptr)
@@ -833,6 +812,7 @@ bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::BuildResourceMapFro
                     rgd_resource.rmv_identifier = event_info->resource_identifier;
                     rgd_resource.commit_type = event_info->commit_type;
                     rgd_resource.resource_type = event_info->resource_type;
+                    rgd_resource.is_implicit = event_info->is_implicit;
 
                     switch (event_info->resource_type)
                     {
@@ -868,6 +848,30 @@ bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::BuildResourceMapFro
 
                     default:
                         break;
+                    }
+
+                    // Update paired resource index.
+                    RmtResourceIdentifier paired_resource_rmv_id = -1;
+                    if (RmtResourceUserDataFindPairedResource(rgd_resource.rmv_identifier, &paired_resource_rmv_id) == kRmtOk)
+                    {
+                        // Update for both current resource and it's paired resource.
+                        // The update will take place when 'create' event is seen for both current and it's paired resource.
+                        if (va_info.resource_map_.find(paired_resource_rmv_id) != va_info.resource_map_.end())
+                        {
+                            RgdResource& paired_resource            = *va_info.resource_map_[paired_resource_rmv_id];
+                            paired_resource.associated_resource_idx = current_resource_list_idx;
+                            
+                            // Find the ResourceList index of the paired_resource.
+                            for (intmax_t idx = current_resource_list_idx - 1; idx >= 0; idx--)
+                            {
+                                RgdResource& temp_resource = *va_info.resource_list_[idx];
+                                if (temp_resource.rmv_identifier == paired_resource.rmv_identifier)
+                                {
+                                    rgd_resource.associated_resource_idx = idx;
+                                    break;
+                                }
+                            }
+                        }
                     }
 
                     // Track resource create, bind or destroy event timeline for this va.
@@ -1162,80 +1166,25 @@ uint64_t RgdResourceInfoSerializer::pImplResourceInfoSerializer::GetResourceCrea
     return resource_create_time;
 }
 
-void RgdResourceInfoSerializer::pImplResourceInfoSerializer::FindAndUpdateRmtResourceAndImplicitHeapPair(const uint64_t virtual_address)
-{
-    const size_t kImplicitResourceCheckClockTicksThreshold = 2;
-    assert(va_info_map_.find(virtual_address) != va_info_map_.end());
-    if (va_info_map_.find(virtual_address) != va_info_map_.end())
-    {
-        const RgdVaInfo& va_info = *va_info_map_[virtual_address];
-        for (size_t resource_idx = 0; resource_idx < va_info.resource_list_.size(); ++resource_idx)
-        {
-            assert(va_info.resource_list_[resource_idx] != nullptr);
-            if (va_info.resource_list_[resource_idx] != nullptr)
-            {
-                RgdResource& current_resource = *va_info.resource_list_[resource_idx];
-
-                for (size_t i = resource_idx + 1; i < va_info.resource_list_.size(); ++i)
-                {
-                    assert(va_info.resource_list_[i] != nullptr);
-                    if (va_info.resource_list_[i] != nullptr)
-                    {
-                        RgdResource& next_resource = *va_info.resource_list_[i];
-
-                        // Check for next resources until creation time of the next resource is within kImplicitResourceCheckClockTicksThreshold clock ticks.
-                        if (GetResourceCreateTime(va_info, next_resource) > (kImplicitResourceCheckClockTicksThreshold + GetResourceCreateTime(va_info, current_resource)))
-                        {
-                            break;
-                        }
-
-                        // Check if only one of the two resources being compared is 'Heap' resource
-                        // And at least, one of the resources should have "NULL" resource name as implicit resource is never assigned a valid resource name.
-                        if ((current_resource.resource_type == kRmtResourceTypeHeap) != (next_resource.resource_type == kRmtResourceTypeHeap)
-                            && (current_resource.resource_name == kNullStr || next_resource.resource_name == kNullStr))
-                        {
-                            // If 'Heap' resource found, check if both resources have valid associated_resource_idx and they are same in size and their virtual address and base allocation address matches with each other.
-                            if (current_resource.associated_resource_idx == -1
-                                && next_resource.associated_resource_idx == -1
-                                && next_resource.size_in_bytes == current_resource.size_in_bytes
-                                && next_resource.address == current_resource.address
-                                && next_resource.allocation_base_address == current_resource.allocation_base_address)
-                            {
-                                // Associated resource found.
-                                current_resource.associated_resource_idx = i;
-                                next_resource.associated_resource_idx = resource_idx;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 // Format resource history as a string.
-void RgdResourceInfoSerializer::pImplResourceInfoSerializer::ResourceHistoryToString(const uint64_t virtual_address, std::string& out_text)
+void RgdResourceInfoSerializer::pImplResourceInfoSerializer::ResourceHistoryToString(const Config&  user_config,
+                                                                                     const uint64_t virtual_address,
+                                                                                     std::string&   out_text)
 {
     std::stringstream txt;
     const char* kResourceTypeStr = "Type: ";
     const char* kResourceAttributeStr = "Attributes";
     const char* kResourceIdStr = "Resource id: ";
     const char* kNameStr = "Name: ";
-
-    // update txt with va residency info.
-    txt << out_text;
-
-    txt << "Associated resources" << std::endl;
-    txt << "====================" << std::endl;
-
-    const RgdVaInfo& va_info = *va_info_map_[virtual_address];
+    bool              is_no_associated_resources = false;
+    
+    const RgdVaInfo&  va_info                    = *va_info_map_[virtual_address];
 
     if (va_info_map_.find(virtual_address) != va_info_map_.end())
     {
         if (va_info.resource_map_.empty())
         {
-            txt << "INFO: no associated resources detected for the offending VA.";
+            is_no_associated_resources = true;
         }
     }
     else
@@ -1244,51 +1193,36 @@ void RgdResourceInfoSerializer::pImplResourceInfoSerializer::ResourceHistoryToSt
         assert(false);
     }
 
+    if ((virtual_address & kVaDeadBeef) == kVaDeadBeef && is_no_associated_resources)
+    {
+        txt << "Note: This page fault address, together with the fact that no resources ever resided in it, suggests a wrong descriptor indexing." << std::endl
+            << std::endl;
+    }
+
+    // Update txt with va residency info.
+    txt << out_text;
+
+    txt << "Associated resources" << std::endl;
+    txt << "====================" << std::endl;
+
+    if (is_no_associated_resources)
+    {
+        txt << "INFO: no associated resources detected for the offending VA.";
+    }
+
     for(size_t i = 0; i < va_info.resource_list_.size(); ++i)
     {
         const RgdResource& current_resource = *va_info.resource_list_[i];
 
         // Upon creation of a committed resource an implicit heap is created or upon a creation of a heap an implicit buffer is created.
-        // This pair of committed resource and associated implicit resource will be consolidated and treated as one resource for default RGD output.
-        // Skip consolidating implicit resources if '--expand-implicit-resources' option is used.
+        // RGD output will include implicit resource when '--implicit-res' option is used.
         // associated_resource_idx holds the index of the associated RmtResource and implicit resource pair.
-        // If '--expand-implicit-resource' option is used, associated_resource_idx will not be updated.
-        bool is_implicit_resource = (current_resource.associated_resource_idx != -1 && current_resource.resource_type == kRmtResourceTypeHeap);
-        if (!is_implicit_resource)
+        
+        if (!current_resource.is_implicit || user_config.is_include_implicit_resources)
         {
-            // Does this resource has associated implicit resource or does the '--expand-implicit-resources' option is used?
-            bool is_resource_pair_print = false;
-            if (current_resource.associated_resource_idx != -1)
-            {
-                // This resource has associated implicit resource. Serialize the information of both resources together.
-                assert(va_info.resource_list_[current_resource.associated_resource_idx] != nullptr);
-                if (va_info.resource_list_[current_resource.associated_resource_idx] != nullptr)
-                {
-                    is_resource_pair_print = true;
-                }
-            }
-
-            if (is_resource_pair_print)
-            {
-                const RgdResource& associated_resource = *va_info.resource_list_[current_resource.associated_resource_idx];
-
-                // The resource at associated_resource_index should be a 'Heap' or a 'Buffer'.
-                assert(associated_resource.resource_type == kRmtResourceTypeHeap || associated_resource.resource_type == kRmtResourceTypeBuffer);
-
-                txt << kResourceIdStr << std::hex << "<0x" << current_resource.rmv_identifier << ", 0x" << associated_resource.rmv_identifier << ">" << std::dec << std::endl;
-
-                // Print resource type of both resources, Example: "Type: <Heap, Image>"
-                txt << "\t" << kResourceTypeStr << "<" << GetResourceTypeText(kRmtResourceTypeHeap) << ", " << GetResourceTypeText(current_resource.resource_type) << ">" << std::endl;
-                txt << "\t" << kNameStr << ((current_resource.resource_name != kNullStr) ? current_resource.resource_name : associated_resource.resource_name) << std::endl;
-            }
-            else
-            {
-                // This resource is not associated with an implicit resource or '--expand-implicit-resources' option is used.
-                txt << kResourceIdStr << std::hex << "0x" << current_resource.rmv_identifier << std::dec << std::endl;
-                txt << "\t" << kResourceTypeStr << GetResourceTypeText(current_resource.resource_type) << std::endl;
-                txt << "\t" << kNameStr << current_resource.resource_name << std::endl;
-            }
-
+            txt << kResourceIdStr << std::hex << "0x" << current_resource.rmv_identifier << std::dec << std::endl;
+            txt << "\t" << kResourceTypeStr << GetResourceTypeText(current_resource.resource_type) << std::endl;
+            txt << "\t" << kNameStr << current_resource.resource_name << std::endl;
             txt << "\tVirtual address:" << std::endl;
 
             size_t bind_events_count = 0;
@@ -1322,6 +1256,10 @@ void RgdResourceInfoSerializer::pImplResourceInfoSerializer::ResourceHistoryToSt
             }
 
             txt << "\tCommit type: " << GetCommitTypeStringFromCommitType(current_resource.commit_type) << std::endl;
+            if (current_resource.is_implicit)
+            {
+                txt << "\tImplicit resource: " << "True" << std::endl;
+            }
 
             // Resource Attributes.
             switch (current_resource.resource_type)
@@ -1512,7 +1450,9 @@ void RgdResourceInfoSerializer::pImplResourceInfoSerializer::ResourceHistoryToSt
 }
 
 //Format resource history as a json.
-bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::ResourceHistoryToJson(const uint64_t virtual_address, nlohmann::json& resource_info_json)
+bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::ResourceHistoryToJson(const Config&   user_config,
+                                                                                   const uint64_t  virtual_address,
+                                                                                   nlohmann::json& resource_info_json)
 {
     bool ret = true;
 
@@ -1548,43 +1488,13 @@ bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::ResourceHistoryToJs
                     const RgdResource& rgd_resource = *va_info.resource_list_[i];
 
                     // Upon creation of a committed resource an implicit heap is created or upon a creation of a heap an implicit buffer is created.
-                    // This pair of committed resource and associated implicit resource will be consolidated and treated as one resource for default RGD output.
-                    // Skip consolidating implicit resources if '--expand-implicit-resources' option is not used.
+                    // RGD output will include implicit resource when '--implicit-res' option is used.
                     // associated_resource_idx holds the index of the associated RmtResource and implicit resource pair.
-                    // If '--expand-implicit-resource' option is used, associated_resource_idx will not be updated.
-                    bool is_implicit_resource = (rgd_resource.associated_resource_idx != -1 && rgd_resource.resource_type == kRmtResourceTypeHeap);
-
-                    if (!is_implicit_resource)
+                    if (!rgd_resource.is_implicit || user_config.is_include_implicit_resources)
                     {
-                        // Does this resource has associated implicit resource or does the '--expand-implicit-resources' option is used?
-                        bool is_resource_pair_print = false;
-                        if (rgd_resource.associated_resource_idx != -1)
-                        {
-                            // This resource has associated implicit resource. Serialize the information of both resources together.
-                            assert(va_info.resource_list_[rgd_resource.associated_resource_idx] != nullptr);
-                            if (va_info.resource_list_[rgd_resource.associated_resource_idx] != nullptr)
-                            {
-                                is_resource_pair_print = true;
-                            }
-                        }
-
                         nlohmann::json resource_element;
                         resource_element["resource_id"] = rgd_resource.rmv_identifier;
-
-                        if (is_resource_pair_print)
-                        {
-                            const RgdResource& associated_resource = *va_info.resource_list_[rgd_resource.associated_resource_idx];
-
-                            // The resource at associated_resource_index should be a 'Heap' or a 'Buffer'.
-                            assert(associated_resource.resource_type == kRmtResourceTypeHeap || associated_resource.resource_type == kRmtResourceTypeBuffer);
-                            resource_element["name"] = (rgd_resource.resource_name != kNullStr) ? rgd_resource.resource_name : associated_resource.resource_name;
-                            resource_element["associated_resource_id"] = associated_resource.rmv_identifier;
-                            resource_element["associated_resource_type"] = GetResourceTypeText(kRmtResourceTypeHeap);
-                        }
-                        else
-                        {
-                            resource_element["name"] = rgd_resource.resource_name;
-                        }
+                        resource_element["name"] = rgd_resource.resource_name;
 
                         static const char* kBoundVirtualAddressRanges = "bound_virtual_address_ranges";
                         resource_element[kBoundVirtualAddressRanges] = nlohmann::json::array();
@@ -1610,6 +1520,10 @@ bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::ResourceHistoryToJs
                             }
                         }
                         resource_element["commit_type"] = GetCommitTypeStringFromCommitType(rgd_resource.commit_type);
+                        if (rgd_resource.is_implicit)
+                        {
+                            resource_element["implicit_resource"] = rgd_resource.is_implicit;
+                        }
                         resource_element[kResourceTimeline] = nlohmann::json::array();
 
                         for (size_t resource_timeline_idx : rgd_resource.timeline_indices)
@@ -1766,17 +1680,9 @@ void RgdResourceInfoSerializer::pImplResourceInfoSerializer::SetCpuFrequency(con
     cpu_frequency_ = cpu_frequency;
 }
 
-void RgdResourceInfoSerializer::pImplResourceInfoSerializer::SetTargetProcessId(const uint64_t target_process_id)
-{
-    target_process_id_ = target_process_id;
-}
-
-uint64_t RgdResourceInfoSerializer::pImplResourceInfoSerializer::GetTargetProcessId() const
-{
-    return target_process_id_;
-}
-
-void RgdResourceInfoSerializer::pImplResourceInfoSerializer::GenerateResourceTimeline(const uint64_t virtual_address, std::string& resource_timeline)
+void RgdResourceInfoSerializer::pImplResourceInfoSerializer::GenerateResourceTimeline(const Config&  user_config,
+                                                                                      const uint64_t virtual_address,
+                                                                                      std::string&   resource_timeline)
 {
     const int kEventTypeWidth = 16;
     const int kResourceTypeWidth = 22;
@@ -1863,31 +1769,16 @@ void RgdResourceInfoSerializer::pImplResourceInfoSerializer::GenerateResourceTim
             const RgdResource& rgd_resource = *va_info.resource_map_[rgd_resource_event.identifier];
 
             // Upon creation of a committed resource an implicit heap is created or upon a creation of a heap an implicit buffer is created.
-            // This pair of committed resource and associated implicit resource will be consolidated and treated as one resource for default RGD output.
-            // Skip consolidating implicit resources if '--expand-implicit-resources' option is not used.
+            // RGD output will include implicit resource when '--implicit-res' option is used.
             // associated_resource_idx holds the index of the associated RmtResource and implicit resource pair.
-            // If '--expand-implicit-resource' option is used, associated_resource_idx will not be updated.
-            bool is_implicit_resource = (rgd_resource.associated_resource_idx != -1 && rgd_resource.resource_type == kRmtResourceTypeHeap);
 
-            if (!is_implicit_resource)
+            if (!rgd_resource.is_implicit || user_config.is_include_implicit_resources)
             {
                 if (index == 0 || look_ahead_counter[index - 1] == 0 || same_events_count == 0)
-                {
+                { 
                     // Set same events count.
                     same_events_count = look_ahead_counter[index];
                     timestamp_txt << GetTimestampString(rgd_resource_event.event_timestamp);
-                }
-
-                // Does this resource has associated implicit resource or is the '--expand-implicit-resources' option used?
-                bool is_resource_pair_print = (rgd_resource.associated_resource_idx != -1);
-
-                if (is_resource_pair_print)
-                {
-                    assert(va_info.resource_list_[rgd_resource.associated_resource_idx] != nullptr);
-                    if (va_info.resource_list_[rgd_resource.associated_resource_idx] == nullptr)
-                    {
-                        is_resource_pair_print = false;
-                    }
                 }
 
                 if (look_ahead_counter[index] == 0 || same_events_count < kMinEventsToExpand)
@@ -1932,24 +1823,11 @@ void RgdResourceInfoSerializer::pImplResourceInfoSerializer::GenerateResourceTim
                     std::stringstream resource_type_string;
                     std::stringstream resource_name_string;
                     std::stringstream resource_id_string;
-                    if (is_resource_pair_print)
-                    {
-                        // Print the legend information for '<>' notation.
-                        is_print_legend = true;
+                    
+                    resource_id_string << std::hex << "0x" << rgd_resource.rmv_identifier << std::dec;
+                    resource_type_string << GetResourceTypeText(rgd_resource.resource_type);
+                    resource_name_string << rgd_resource.resource_name;
 
-                        const RgdResource& associated_resource = *va_info.resource_list_[rgd_resource.associated_resource_idx];
-
-                        // This resource has associated implicit resource. Resource type is printed in pair, Example: <Heap, Image>
-                        resource_id_string << std::hex << "<0x" << rgd_resource.rmv_identifier << ", 0x" << associated_resource.rmv_identifier << ">" << std::dec;
-                        resource_type_string << "<" << GetResourceTypeText(kRmtResourceTypeHeap) << ", " << GetResourceTypeText(rgd_resource.resource_type) << ">";
-                        resource_name_string << ((rgd_resource.resource_name != kNullStr) ? rgd_resource.resource_name : associated_resource.resource_name);
-                    }
-                    else
-                    {
-                        resource_id_string << std::hex << "0x" << rgd_resource.rmv_identifier << std::dec;
-                        resource_type_string << GetResourceTypeText(rgd_resource.resource_type);
-                        resource_name_string << rgd_resource.resource_name;
-                    }
                     PrintFormattedResourceTimeline(resource_type_string.str(), kResourceTypeWidth, timeline_txt);
                     PrintFormattedResourceTimeline(resource_id_string.str(), kResourceIdWidth, timeline_txt);
                     PrintFormattedResourceTimeline(RgdParsingUtils::GetFormattedSizeString(rgd_resource.size_in_bytes), kResourceSizeWidth, timeline_txt);

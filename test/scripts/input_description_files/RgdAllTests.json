@@ -1,0 +1,212 @@
+{
+	"DX12": [
+		{
+			"test_name": "EndlessLoopSingleVertex",
+			"crash_test_case": 2,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "EvictReferenced",
+			"crash_test_case": 5,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "EvictReferencedNoOveflow",
+			"crash_test_case": 6,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "EvictReferencedNoOveflow - Multi",
+			"crash_test_case": 6.1,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "ReleaseTextureSRV",
+			"crash_test_case": 7,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "WrongAddressInDesc ",
+			"crash_test_case": 8,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "SamplerOutOfRange",
+			"crash_test_case": 9,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "WrongAcclerationStructureOffset",
+			"crash_test_case": 10,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "OverwriteTLAS ",
+			"crash_test_case": 11,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "IncorretTLASAddress",
+			"crash_test_case": 12,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "IncorretTLASAddressAligned",
+			"crash_test_case": 13,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "IncorrectInlineTraceData",
+			"crash_test_case": 14,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "BufferOutOfBounds",
+			"crash_test_case": 16,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "NullCBV",
+			"crash_test_case": 17,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "DestroyCBuffer",
+			"crash_test_case": 18,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "SamplerInfinityBias",
+			"crash_test_case": 19,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "IncorrectStructuredBufferSRV",
+			"crash_test_case": 20,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "DescTableNotBound",
+			"crash_test_case": 21,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "ReleaseTextureSRV",
+			"crash_test_case": 22,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "ReleaseTextureSRV crash on 4th",
+			"crash_test_case": 22.1,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "ReleaseTextureSRV_Async",
+			"crash_test_case": 22.2,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "UseNotResidentSRV",
+			"crash_test_case": 23,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "ReleaseReservedTexture",
+			"crash_test_case": 24,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "ReleaseReservedTextureHeap",
+			"crash_test_case": 25,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "ReleaseTextureSRV_Placed",
+			"crash_test_case": 27,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "NullRootSig",
+			"crash_test_case": 28,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		}
+	]
+}

@@ -8,6 +8,7 @@
 // Local.
 #include "rgd_marker_data_serializer.h"
 #include "rgd_exec_marker_tree_serializer.h"
+#include "rgd_utils.h"
 
 // C++.
 #include <string>
@@ -45,7 +46,17 @@ bool ExecMarkerDataSerializer::GenerateExecutionMarkerTree(const Config& user_co
     for (const std::pair<const uint64_t, std::unique_ptr<ExecMarkerTreeSerializer>>& cmd_buffer_item : command_buffer_exec_tree_)
     {
         // Generate status string.
-        txt_tree << "Command Buffer ID: 0x" << std::hex << cmd_buffer_item.first << std::dec << std::endl;
+        txt_tree << "Command Buffer ID: 0x" << std::hex << cmd_buffer_item.first << std::dec;
+        
+        std::stringstream txt_cmd_buffer_info;
+        if (cmd_buffer_info_map_.find(cmd_buffer_item.first) != cmd_buffer_info_map_.end())
+        {
+            // Print command buffer info. Example: (Queue type: Direct)
+            const CmdBufferInfo& cmd_buffer_info = cmd_buffer_info_map_[cmd_buffer_item.first];
+            txt_cmd_buffer_info << " (Queue type: " << RgdUtils::GetCmdBufferQueueTypeString((CmdBufferQueueType)cmd_buffer_info.queue) << ")";
+            txt_tree << txt_cmd_buffer_info.str();
+        }
+        txt_tree << std::endl;
         txt_tree << "======================";
         uint64_t cmd_buffer_id = cmd_buffer_item.first;
         while (cmd_buffer_id > 0xF)
@@ -53,6 +64,12 @@ bool ExecMarkerDataSerializer::GenerateExecutionMarkerTree(const Config& user_co
             txt_tree << "=";
             cmd_buffer_id /= 0xF;
         }
+
+        for (size_t cmd_buffer_info_text_length = txt_cmd_buffer_info.str().length(); cmd_buffer_info_text_length > 0; --cmd_buffer_info_text_length)
+        {
+            txt_tree << "=";
+        }
+
         txt_tree << std::endl;
         txt_tree << command_buffer_exec_tree_[cmd_buffer_item.first]->TreeToString(user_config) << std::endl;
     }
@@ -76,7 +93,7 @@ bool ExecMarkerDataSerializer::GenerateExecutionMarkerTreeToJson(const Config& u
     nlohmann::json& all_cmd_buffers_marker_tree_json)
 {
     bool ret = true;
-
+    
     nlohmann::json marker_tree_json;
 
     if (command_buffer_exec_tree_.empty())
@@ -88,6 +105,15 @@ bool ExecMarkerDataSerializer::GenerateExecutionMarkerTreeToJson(const Config& u
     for (const std::pair<const uint64_t, std::unique_ptr<ExecMarkerTreeSerializer>>& cmd_buffer_item : command_buffer_exec_tree_)
     {
         marker_tree_json[kJsonElemCmdBufferIdElement] = cmd_buffer_item.first;
+
+        std::string cmd_buffer_queue_type_str = kStrNotAvailable;
+        if (cmd_buffer_info_map_.find(cmd_buffer_item.first) != cmd_buffer_info_map_.end())
+        {
+            // Add command buffer info element. Example: queue_type: "Direct"
+            const CmdBufferInfo& cmd_buffer_info = cmd_buffer_info_map_[cmd_buffer_item.first];
+            cmd_buffer_queue_type_str = RgdUtils::GetCmdBufferQueueTypeString((CmdBufferQueueType)cmd_buffer_info.queue);
+        }
+        marker_tree_json["cmd_buffer_queue_type"] = cmd_buffer_queue_type_str;
         command_buffer_exec_tree_[cmd_buffer_item.first]->TreeToJson(user_config, marker_tree_json);
         all_cmd_buffers_marker_tree_json[kJsonElemExecutionMarkerTree].push_back(marker_tree_json);
     }
@@ -213,7 +239,19 @@ bool ExecMarkerDataSerializer::BuildCmdBufferMarkerStatus(const CrashData& umd_c
                         else
                         {
                             marker_status[marker_value].is_started = true;
-                            is_last_begin_found = (marker_value == debug_nop_event.beginTimestampValue);
+
+                            // Internal driver barrier markers are filtered out during the marker command buffer mapping.
+                            // It is possible for debug_nop_event.beginTimestampValue to be equal to one of the filtered out marker values.
+                            // So if check if marker_value is greater or equal than debug_nop_event.beginTimestampValue to set the last begin marker found flag.
+                            // Compare marker values without the leading source bits as marker values are unique regardless of their source value.
+                            is_last_begin_found = ((marker_value & kMarkerValueMask) >= (debug_nop_event.beginTimestampValue & kMarkerValueMask));
+
+                            if ((marker_value & kMarkerValueMask) > (debug_nop_event.beginTimestampValue & kMarkerValueMask))
+                            {
+                                // If the marker value is greater than the beginTimeStampValue and control reaches here, it implies that the matching marker with the beginTimeStamp value is filtered out.
+                                // Since the current marker is after the last begin marker (beginTimestampValue), set the status as "Not started".
+                                marker_status[marker_value].is_started = false;
+                            }
                         }
                     }
                     // If marker last to enter is found, ignore ExecutionMarkerEnd events after that point in time.
@@ -237,8 +275,19 @@ bool ExecMarkerDataSerializer::BuildCmdBufferMarkerStatus(const CrashData& umd_c
                         }
                         else
                         {
-                            is_last_end_found = (marker_value == debug_nop_event.endTimestampValue);
+                            // Internal driver barrier markers are filtered out during the marker command buffer mapping.
+                            // It is possible for debug_nop_event.endTimestampValue to be equal to one of the filtered out marker values.
+                            // So if check if marker_value is greater or equal than debug_nop_event.endTimestampValue to set the last end marker found flag.
+                            // Compare marker values without the leading source bits as marker values are unique regardless of their source value.
+                            is_last_end_found = ((marker_value & kMarkerValueMask) >= (debug_nop_event.endTimestampValue & kMarkerValueMask));
                             marker_status[marker_value].is_finished = true;
+
+                            if ((marker_value & kMarkerValueMask) > (debug_nop_event.endTimestampValue & kMarkerValueMask))
+                            {
+                                // If the marker value is greater than the endTimestampValue and control reaches here, it implies that the matching marker with the endTimestampValue value is filtered out.
+                                // Since the current marker is after the last end marker (endTimestampValue), set the status as "Not finished".
+                                marker_status[marker_value].is_finished = false;
+                            }
                         }
                     }
                 }
@@ -324,6 +373,38 @@ bool ExecMarkerDataSerializer::BuildCmdBufferExecutionMarkerTreeNodes(const Conf
                                     : std::string(kStrNotAvailable);
 
                             command_buffer_exec_tree_[debug_nop_event.cmdBufferId]->PushMarkerBegin(curr_marker_event.event_time, marker_value, marker_name);
+                        }
+                        else if (marker_event_id == UmdEventId::RgdEventExecutionMarkerInfo)
+                        {
+                            const CrashAnalysisExecutionMarkerInfo& exec_marker_info_event =
+                                static_cast<const CrashAnalysisExecutionMarkerInfo&>(*curr_marker_event.rgd_event);
+                            uint32_t marker_value = exec_marker_info_event.marker;
+
+                            uint8_t* marker_info = const_cast<uint8_t*>(exec_marker_info_event.markerInfo);
+                            ExecutionMarkerInfoHeader* exec_marker_info_header = reinterpret_cast<ExecutionMarkerInfoHeader*>(marker_info);
+
+                            if (exec_marker_info_header->infoType == ExecutionMarkerInfoType::CmdBufStart)
+                            {
+                                // Update command buffer info.
+                                CmdBufferInfo* cmd_buffer_info = reinterpret_cast<CmdBufferInfo*>(marker_info + sizeof(ExecutionMarkerInfoHeader));
+                                cmd_buffer_info_map_[debug_nop_event.cmdBufferId] = *cmd_buffer_info;
+                            }
+                            else if (exec_marker_info_header->infoType == ExecutionMarkerInfoType::Draw
+                                || exec_marker_info_header->infoType == ExecutionMarkerInfoType::Dispatch)
+                            {
+                                // Update Draw or Dispatch MarkerNode with additional info.
+                                command_buffer_exec_tree_[debug_nop_event.cmdBufferId]->UpdateMarkerInfo(marker_value, exec_marker_info_event.markerInfo);
+                            }
+                            else if (exec_marker_info_header->infoType == ExecutionMarkerInfoType::BarrierBegin)
+                            {
+                                // Update the Barrier MarkerNode with additional info.
+                                // Currently MarkerNode holds space for one CrashAnalysisExecutionMarkerInfo (marker_info[64]).
+                                // Barrier type marker is the only marker which has two "CrashAnalysisExecutionMarkerInfo" events followed by the CrashAnalysisExecutionMarkerBegin marker.
+                                // These two MarkerInfo event types are - BarrierBegin and BarrierEnd.
+                                // Since information provided with BarrierEnd Info marker is not in use, the available marker_info[64] is used to store the information from BarrierBegin Info marker and BarrierEnd Info marker is ignored.
+                                // If info provided with BarrierEnd is needed in future, update the MarkerNode struct to hold additional marker_info[64] from the BarrierEnd event.
+                                command_buffer_exec_tree_[debug_nop_event.cmdBufferId]->UpdateMarkerInfo(marker_value, exec_marker_info_event.markerInfo);
+                            }
                         }
                         else if (marker_event_id == UmdEventId::RgdEventExecutionMarkerEnd)
                         {
