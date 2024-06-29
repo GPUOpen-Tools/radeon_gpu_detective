@@ -1,5 +1,5 @@
 #! python3
-# Copyright (c) 2023 Advanced Micro Devices, Inc. All rights reserved.
+# Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
 #
 # Definitions for project external dependencies to be fetched or updated before build.
 #
@@ -21,9 +21,9 @@ github_root = "https://github.com/"
 git_mapping = {
     github_root     + "nlohmann/json"                                   : ["../external/third_party/json",    "v3.9.1"],
     github_root     + "jarro2783/cxxopts"                               : ["../external/third_party/cxxopts", "v3.0.0"],
-    amd_github_root + "LibAmd/rdf"                                      : ["../external/rdf",                 "76de7bd201d1a7264cd0f73f88ac945848c36281"],
-    amd_github_root + "Developer-Solutions/radeon_memory_visualizer"    : ["../external/rmv",                 "9ac8dc789aaa36246326d47ca20d7eb3d17aad3e"],
-    amd_github_root + "Developer-Solutions/system_info_utils"           : ["../external/system_info_utils",   "a5c0365e3b0ff44a9a35367f7eeaaf5ed9a5ddc6"],
+    github_root     + "LibAmd/rdf"                                      : ["../external/rdf",                 "76de7bd201d1a7264cd0f73f88ac945848c36281"],
+    github_root     + "Developer-Solutions/radeon_memory_visualizer"    : ["../external/rmv",                 "9ff1cd0491ec4b040557f3e844c04018db6c3368"],
+    github_root     + "Developer-Solutions/system_info_utils"           : ["../external/system_info_utils",   "a5c0365e3b0ff44a9a35367f7eeaaf5ed9a5ddc6"],
     github_root     + "catchorg/Catch2"                                 : ["../external/third_party/catch2",  "v2.13.6"]
 }
 
