@@ -10,7 +10,7 @@ project (RGD)
 
 # Define version information
 set(RGD_MAJOR_VERSION 1)
-set(RGD_MINOR_VERSION 2)
+set(RGD_MINOR_VERSION 3)
 set(RGD_PATCH_NUMBER 0)
 if (NOT RGD_BUILD_NUMBER)
     set(RGD_BUILD_NUMBER 0)

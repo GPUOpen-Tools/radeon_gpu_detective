@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2023 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  main entry point of RGD CLI.
@@ -102,6 +102,7 @@ static bool ParseCrashDump(const Config& user_config, RgdCrashDumpContents& cont
     std::string error_msg;
     bool ret = false;
     bool is_system_info_parsed = false;
+    bool is_driveroverrides_parsed = false;
     try
     {
         rdf::ChunkFile chunk_file = rdf::ChunkFile(file);
@@ -118,6 +119,8 @@ static bool ParseCrashDump(const Config& user_config, RgdCrashDumpContents& cont
 
         // Parse TraceProcessInfo chunk.
         RgdParsingUtils::ParseTraceProcessInfoChunk(chunk_file, kChunkIdTraceProcessInfo, contents.crashing_app_process_info);
+
+        is_driveroverrides_parsed = RgdParsingUtils::ParseDriverOverridesChunk(chunk_file, kChunkIdDriverOverrides, contents.driver_experiments_json);
     }
     catch (const std::exception& e)
     {
@@ -161,6 +164,16 @@ static bool ParseCrashDump(const Config& user_config, RgdCrashDumpContents& cont
             std::cerr << "ERROR: failed to parse system information contents in crash dump file." << std::endl;
         }
 
+        assert(is_driveroverrides_parsed);
+        if (is_driveroverrides_parsed)
+        {
+            RgdUtils::PrintMessage("driver experiments information parsed successfully.", RgdMessageType::kInfo, user_config.is_verbose);
+        }
+        else
+        {
+            std::cerr << "ERROR: failed to parse DriverOverrides chunk in crash dump file." << std::endl;
+        }
+
         // Done parsing the file here.
         file.Close();
 
@@ -187,7 +200,7 @@ static void SerializeTextOutput(const RgdCrashDumpContents& contents, const Conf
     txt << input_info_str;
 
     std::string system_info_str;
-    RgdSerializer::ToString(user_config, contents.system_info, system_info_str);
+    RgdSerializer::ToString(user_config, contents.system_info, contents.driver_experiments_json, system_info_str);
     txt << system_info_str << std::endl;
 
     std::cout << "Generating text representation of the execution marker information..." << std::endl;
@@ -408,6 +421,7 @@ static bool PerformCrashAnalysis(const Config& user_config)
         serializer_json.SetInputInfo(user_config, contents.crashing_app_process_info, contents.system_info, contents.api_info);
 
         serializer_json.SetSystemInfoData(user_config, contents.system_info);
+        serializer_json.SetDriverExperimentsInfoData(contents.driver_experiments_json);
 
         ExecMarkerDataSerializer exec_marker_serializer;
 

@@ -75,8 +75,35 @@ This section is titled ``SYSTEM INFO`` and includes information about the system
 
 * **Operating system** information
 * **Graphics driver** information
+* List of active Driver Experiments
 * Details about the installed **CPUs**
 * Details about the installed **GPUs**
+
+Driver Experiments for Crash Analysis
+"""""""""""""""""""""""""""""""""""""
+
+RGD v1.3 supports a powerful new feature called **Driver Experiments** which lets you toggle certain driver features and optimizations that can change the behavior of your application without modifying its source code or configuration. This is done using Driver Experiments that control the low-level behavior of the Radeon Adrenalin driver. These experiments control features like raytracing or mesh shader support, compiler optimizations and more and can be useful in debugging GPU crashes.
+
+AMD GPU crash dumps (.rgd files) record the list of Driver Experiments that were active during the crash analysis session, so that you always have an accurate picture of the driver configuration with which your app crashed. RGD's crash analysis output summary text file will display the list of Driver Experiments that were active as part of the System Info section. This information will also be available in RGD's machine-readable JSON output file.
+For more details about this feature, please refer to the :ref:`quickstart-guide`.
+
+For a detailed description of each supported experiment, please refer to the Driver Experiments section of the `RDP documentation <https://gpuopen.com/manuals/rdp_manual/rdp_manual-index/>`_.
+
+Here is an example of active Driver Experiments::
+
+    ===========
+    SYSTEM INFO
+    ===========
+
+    Driver info
+    ===========
+    ...
+    Experiments : total of 4 Driver Experiments were active while capturing the AMD GPU crash dump:
+	    1. Disable sampler feedback support
+	    2. Disable raytracing support
+	    3. Disable variable rate shading
+	    4. Hull shader wave size: Force 32 threads per wave
+
 
 Markers in progress
 """""""""""""""""""
@@ -172,7 +199,7 @@ The tree structure and contents are also configurable through the RDP options (o
   Note that RGD will collapse nodes which have all of their subnodes in finished state to remove noise and improve the tree's readability.
 
 
-.. image:: images/image2024-06-19-advanced-options.png
+.. image:: images/rgd-advanced-options.png
 
 Page fault summary
 """"""""""""""""""
@@ -282,7 +309,7 @@ Let's elaborate:
    but a different other type of problem, e.g. a shader hang due to timeout (too long execution) or an infinite loop.
 
    
-Scope of v1.2
+Scope of v1.3
 -------------
 RGD is designed to capture **GPU crashes** on Windows. If a GPU fault (such as memory page fault or infinite loop in a shader) causes the GPU driver to not respond to the OS for some pre-determined 
 time period (the default on Windows is 2 seconds), the OS will detect that and attempt to restart or remove the device. This mechanism is also known as "TDR" (Timeout Detection and Recovery) and is what we 
@@ -300,7 +327,6 @@ Please use CPU debugging mechanisms like Microsoft Visual Studio to investigate 
 Rendering code which **incorrectly uses D3D12 or Vulkan** may also fail purely on the CPU and not reach the graphics driver or the GPU. 
 Therefore, such crashes are not captured by RGD. They usually result in ``DXGI_ERROR_INVALID_CALL`` error code returned, and 
 are usually detected by the D3D12 Debug Layer.
-   
 
 .. note::
    When debugging a problem in any D3D12 application, first **enable the D3D12 Debug Layer** and
@@ -330,6 +356,9 @@ Usage tips for RGD
   This will make sure that Crash Analysis mode will be enabled in the driver when your application is run.
 
 * In Vulkan, the old device extension VK_EXT_debug_marker is also supported by RGD, but it is now deprecated in favor of the VK_EXT_debug_utils instance extension.
+
+* **Try Crash Analysis with Driver Experiments**: If you suspect that certain optimizations or features enabled by the driver might be causing the crash, 
+  you can try to disable them using Driver Experiments. This can help you narrow down the search for the cause of the crash.
 
 Known issues and workarounds
 ----------------------------

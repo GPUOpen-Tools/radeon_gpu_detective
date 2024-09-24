@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2023 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  utilities for parsing raw data.
@@ -610,6 +610,62 @@ bool RgdParsingUtils::ParseTraceProcessInfoChunk(rdf::ChunkFile& chunk_file, con
         RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
     }
 
+    ret = error_txt.str().empty();
+
+    return ret;
+}
+
+bool RgdParsingUtils::ParseDriverOverridesChunk(rdf::ChunkFile& chunk_file, const char* chunk_identifier, nlohmann::json& driver_experiments_json)
+{
+    bool              ret = true;
+    const int64_t     kChunkCount = chunk_file.GetChunkCount(chunk_identifier);
+    const int64_t     kChunkIdx = 0;
+    const char*       kErrorMsg = "failed to extract the list of enabled Driver Experiments";
+    std::stringstream error_txt;
+
+    // Parse DriverOverrides chunk. It will not be present for the files captured with RDP 3.0 and before.
+    if (kChunkCount > 0)
+    {
+        const uint32_t kChunkVersion = chunk_file.GetChunkVersion(chunk_identifier);
+        if (kChunkVersion <= kChunkMaxSupportedVersionDriverOverrides)
+        {
+            // Only one DriverOverrides chunk is expected so chunk index is set to 0 (first chunk).
+            assert(kChunkCount == 1);
+            uint64_t payload_size = chunk_file.GetChunkDataSize(chunk_identifier, kChunkIdx);
+            if (payload_size > 0)
+            {
+                std::string driver_overrides_json_data(payload_size, '\0');
+
+                // Read the DriverOverrides chunk payload data.
+                chunk_file.ReadChunkDataToBuffer(chunk_identifier, kChunkIdx, driver_overrides_json_data.data());
+                try
+                {
+                    driver_experiments_json = nlohmann::json::parse(driver_overrides_json_data.data());
+                }
+                catch (const std::exception& e)
+                {
+                    error_txt << kErrorMsg << " (" << e.what() << ")";
+                    RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+                }
+            }
+            else
+            {
+                error_txt << kErrorMsg << " (invalid chunk payload size [" << kChunkIdDriverOverrides << "])";
+                RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+            }
+        }
+        else
+        {
+            error_txt << kErrorMsg << " (unsupported chunk version: " << kChunkVersion << " [" << kChunkIdDriverOverrides << "])";
+            RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+        }
+    }
+    else
+    {
+        error_txt << kErrorMsg << " (Driver Experiments information missing [" << kChunkIdDriverOverrides << "])";
+        RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+    }
+    
     ret = error_txt.str().empty();
 
     return ret;

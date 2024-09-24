@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2023 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  utilities for parsing raw data.
@@ -11,6 +11,9 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+
+// JSON.
+#include "json/single_include/nlohmann/json.hpp"
 
 // RDF.
 #include "rdf/rdf/inc/amdrdf.h"
@@ -43,6 +46,9 @@ public:
 
     // Parses a TraceProcessInfo chunk.
     static bool ParseTraceProcessInfoChunk(rdf::ChunkFile& chunk_file, const char* chunk_identifier, TraceProcessInfo& process_info);
+
+    // Parse a 'DriverOverrides' chunk from the given chunk file.
+    static bool ParseDriverOverridesChunk(rdf::ChunkFile& chunk_file, const char* chunk_identifier, nlohmann::json& driver_experiments_json);
 
 private:
     RgdParsingUtils() = delete;

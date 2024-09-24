@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2023 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  global data types.
@@ -12,6 +12,9 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+
+// JSON.
+#include "json/single_include/nlohmann/json.hpp"
 
 // RDF.
 #include "rdf/rdf/inc/amdrdf.h"
@@ -60,6 +63,24 @@ static const std::unordered_set<std::string> kBarrierMarkerStrings = { kBarrierS
 
 static const char* kChunkIdTraceProcessInfo = "TraceProcessInfo";
 static const uint32_t kChunkMaxSupportedVersionTraceProcessInfo = 1;
+
+static const char* kChunkIdDriverOverrides = "DriverOverrides";
+
+// DriverOverrides chunk version constants.
+static const uint32_t kChunkMaxSupportedVersionDriverOverrides = 3;
+
+// DriverOverrides chunk JSON element name constants.
+static const char* kJsonElemComponentsDriverOverridesChunk          = "Components";
+static const char* kJsonElemComponentDriverOverridesChunk           = "Component";
+static const char* kJsonElemStructuresDriverOverridesChunk          = "Structures";
+static const char* kJsonElemExperimentsDriverOverridesChunk         = "Experiments";
+static const char* kJsonElemSettingNameDriverOverridesChunk         = "SettingName";
+static const char* kJsonElemUserOverrideDriverOverridesChunk        = "UserOverride";
+static const char* kJsonElemWasSupportedDriverOverridesChunk        = "Supported";
+static const char* kJsonElemCurrentDriverOverridesChunk             = "Current";
+static const char* kJsonElemIsDriverExperimentsDriverOverridesChunk = "IsDriverExperiments";
+static const char* kErrorMsgInvalidDriverOverridesJson              = "invalid DriverOverrides JSON";
+static const char* kErrorMsgFailedToParseDriverExperimentsInfo      = "failed to parse Driver Experiments info";
 
 // Represents the execution status of an execution marker.
 // A marker can be in a one of 3 states:
@@ -184,6 +205,9 @@ struct RgdCrashDumpContents
     TraceProcessInfo              crashing_app_process_info;
     // Mapping between command buffer ID and the indices for umd_crash_data.events array of its relevant execution marker events.
     std::unordered_map<uint64_t, std::vector<size_t>> cmd_buffer_mapping;
+
+    // Driver Experiments JSON
+    nlohmann::json driver_experiments_json;
 };
 
 #endif // RADEON_GPU_DETECTIVE_SOURCE_RGD_DATA_TYPES_H_

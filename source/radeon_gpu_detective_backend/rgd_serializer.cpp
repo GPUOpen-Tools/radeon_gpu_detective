@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2023 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  serializer different data elements.
@@ -35,7 +35,105 @@ static double GetValueInHz(double val, ClockSpeedUnit val_unit = ClockSpeedUnit:
     return result;
 }
 
-bool RgdSerializer::ToString(const Config& user_config, const system_info_utils::SystemInfo& system_info, std::string& system_info_txt)
+// Returns the list of active Driver Experiments.
+static std::string GetDriverExperimentsString(const nlohmann::json& driver_experiments_json)
+{
+    std::stringstream txt;
+    size_t            active_experiments_count                  = 0;
+
+    try
+    {
+        if (driver_experiments_json.find(kJsonElemComponentsDriverOverridesChunk) != driver_experiments_json.end()
+            && driver_experiments_json[kJsonElemComponentsDriverOverridesChunk].is_array()
+            && driver_experiments_json.find(kJsonElemIsDriverExperimentsDriverOverridesChunk) != driver_experiments_json.end()
+            && driver_experiments_json[kJsonElemIsDriverExperimentsDriverOverridesChunk].is_boolean())
+        {
+            const bool is_driver_experiments = driver_experiments_json[kJsonElemIsDriverExperimentsDriverOverridesChunk].get<bool>();
+            
+            if (is_driver_experiments)
+            {
+                const nlohmann::json& components_json             = driver_experiments_json[kJsonElemComponentsDriverOverridesChunk];
+                
+                for (const auto& component : components_json)
+                {
+                    // Process "Experiments" component.
+                    if (component[kJsonElemComponentDriverOverridesChunk] == kJsonElemExperimentsDriverOverridesChunk)
+                    {
+                        const nlohmann::json& structures = component[kJsonElemStructuresDriverOverridesChunk];
+                        for (auto it = structures.begin(); it != structures.end(); ++it)
+                        {
+                            const nlohmann::json& experiments = it.value();
+                            for (const auto& experiment : experiments)
+                            {
+                                // Check if the experiment was supported by the driver at the time of the crash.
+                                bool is_supported_experiment = (experiment[kJsonElemWasSupportedDriverOverridesChunk].is_boolean() &&
+                                                                experiment[kJsonElemWasSupportedDriverOverridesChunk]);
+                                if (is_supported_experiment)
+                                {
+                                    if (experiment[kJsonElemUserOverrideDriverOverridesChunk].is_boolean() &&
+                                        experiment[kJsonElemCurrentDriverOverridesChunk].is_boolean())
+                                    {
+                                        // The user override value.
+                                        bool is_user_override = experiment[kJsonElemUserOverrideDriverOverridesChunk].get<bool>();
+
+                                        // The value in the driver at the time of the crash.
+                                        bool is_current = experiment[kJsonElemCurrentDriverOverridesChunk].get<bool>();
+
+                                        if (is_user_override && is_current)
+                                        {
+                                            // Experiment is active only when both user override and current values are true.
+                                            txt << "\t" << ++active_experiments_count << ". "
+                                                << experiment[kJsonElemSettingNameDriverOverridesChunk].get<std::string>() << std::endl;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        txt << "\t" << ++active_experiments_count << ". "
+                                            << experiment[kJsonElemSettingNameDriverOverridesChunk].get<std::string>() << ": "
+                                            << experiment[kJsonElemCurrentDriverOverridesChunk].get<std::string>() << std::endl;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            assert(false);
+            RgdUtils::PrintMessage(kErrorMsgInvalidDriverOverridesJson, RgdMessageType::kError, true);
+        }
+    }
+    catch (nlohmann::json::exception e)
+    {
+        assert(false);
+        std::stringstream error_msg;
+        error_msg << kErrorMsgFailedToParseDriverExperimentsInfo << " (" << e.what() << ")";
+        RgdUtils::PrintMessage(error_msg.str().c_str(), RgdMessageType::kError, true);
+    }
+
+    const char* kDriverExperimentsSectionStr     = "Experiments : ";
+    const char* kDriverExperimentsActiveMsgPart1 = "total of ";
+    const char* kDriverExperimentsActiveMsgPart2 = " Driver Experiments were active while capturing the AMD GPU crash dump:";
+    const char* kDriverExperimentsNotActiveMsg   = "no driver experiments were enabled.";
+
+    std::stringstream driver_experiments_txt;
+    if (active_experiments_count > 0)
+    {
+        driver_experiments_txt << kDriverExperimentsSectionStr << kDriverExperimentsActiveMsgPart1 << active_experiments_count << kDriverExperimentsActiveMsgPart2
+                               << std::endl;
+        driver_experiments_txt << txt.str();
+    }
+    else
+    {
+        driver_experiments_txt << kDriverExperimentsSectionStr << kDriverExperimentsNotActiveMsg << std::endl;
+    }
+
+    return driver_experiments_txt.str();
+}
+
+bool RgdSerializer::ToString(const Config& user_config, const system_info_utils::SystemInfo& system_info, const nlohmann::json& driver_experiments_json, std::string& system_info_txt)
 {
     bool ret = true;
     std::stringstream txt;
@@ -56,6 +154,7 @@ bool RgdSerializer::ToString(const Config& user_config, const system_info_utils:
     txt << "Driver packaging version: " << system_info.driver.packaging_version << std::endl;
     txt << "Driver software version: " << system_info.driver.software_version << std::endl;
     txt << "Dev driver version: " << system_info.devdriver.tag << std::endl;
+    txt << GetDriverExperimentsString(driver_experiments_json);
     txt << std::endl;
 
     // Operating system info.

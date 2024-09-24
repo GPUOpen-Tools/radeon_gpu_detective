@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2023 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  serializer to JSON format.
@@ -24,7 +24,7 @@
 // JSON Schema version
 #define STRINGIFY_JSON_SCHEMA_VERSION(major, minor) STRINGIFY_MACRO(major) "." STRINGIFY_MACRO(minor)
 #define RGD_JSON_SCHEMA_VERSION_MAJOR 1
-#define RGD_JSON_SCHEMA_VERSION_MINOR 0
+#define RGD_JSON_SCHEMA_VERSION_MINOR 1
 #define RGD_JSON_SCHEMA_VERSION STRINGIFY_JSON_SCHEMA_VERSION(RGD_JSON_SCHEMA_VERSION_MAJOR, RGD_JSON_SCHEMA_VERSION_MINOR)
 
 // *** INTERNALLY-LINKED AUXILIARY CONSTANTS - BEGIN ***
@@ -68,6 +68,9 @@ public:
     void SetExecutionMarkerSummaryList(const Config& user_config, const CrashData& kmd_crash_data,
         const std::unordered_map <uint64_t, std::vector<size_t>>& cmd_buffer_events,
         ExecMarkerDataSerializer& exec_marker_serializer);
+
+    // Set Driver Experiments info.
+    void SetDriverExperimentsInfoData(const nlohmann::json& driver_experiments_json);
 
     // Saves the JSON contents to a file.
     bool SaveToFile(const Config& user_config) const;

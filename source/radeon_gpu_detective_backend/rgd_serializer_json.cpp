@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2023 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  serializer to JSON format.
@@ -18,6 +18,8 @@
 // *** INTERNALLY-LINKED AUXILIARY CONSTANTS - BEGIN ***
 
 static const char* kJsonElemTimestampElement = "timestamp";
+static const char* kJsonElemSystemInfo       = "system_info";
+static const char* kJsonElemDriverInfo       = "driver_info";
 
 // *** INTERNALLY-LINKED AUXILIARY CONSTANTS - ENDS ***
 
@@ -55,36 +57,36 @@ void RgdSerializerJson::SetSystemInfoData(const Config& user_config, const syste
     if (user_config.is_extended_sysinfo)
     {
         // Version.
-        json_["system_info"]["system_info_version"]["major"] = system_info.version.major;
-        json_["system_info"]["system_info_version"]["minor"] = system_info.version.minor;
-        json_["system_info"]["system_info_version"]["patch"] = system_info.version.patch;
-        json_["system_info"]["system_info_version"]["build"] = system_info.version.build;
+        json_[kJsonElemSystemInfo]["system_info_version"]["major"] = system_info.version.major;
+        json_[kJsonElemSystemInfo]["system_info_version"]["minor"] = system_info.version.minor;
+        json_[kJsonElemSystemInfo]["system_info_version"]["patch"] = system_info.version.patch;
+        json_[kJsonElemSystemInfo]["system_info_version"]["build"] = system_info.version.build;
     }
 
     // Driver info.
-    json_["system_info"]["driver_info"]["packaging_version"] = system_info.driver.packaging_version;
-    json_["system_info"]["driver_info"]["software_version"] = system_info.driver.software_version;
-    json_["system_info"]["driver_info"]["dev_driver_version"] = system_info.devdriver.tag;
+    json_[kJsonElemSystemInfo][kJsonElemDriverInfo]["packaging_version"] = system_info.driver.packaging_version;
+    json_[kJsonElemSystemInfo][kJsonElemDriverInfo]["software_version"] = system_info.driver.software_version;
+    json_[kJsonElemSystemInfo][kJsonElemDriverInfo]["dev_driver_version"] = system_info.devdriver.tag;
 
     // Operating system info.
-    json_["system_info"]["os"]["name"] = system_info.os.name;
-    json_["system_info"]["os"]["description"] = system_info.os.desc;
-    json_["system_info"]["os"]["hostname"] = system_info.os.hostname;
-    json_["system_info"]["os"]["memory"] = nlohmann::json::array();
-    json_["system_info"]["os"]["memory"].push_back({
+    json_[kJsonElemSystemInfo]["os"]["name"] = system_info.os.name;
+    json_[kJsonElemSystemInfo]["os"]["description"] = system_info.os.desc;
+    json_[kJsonElemSystemInfo]["os"]["hostname"] = system_info.os.hostname;
+    json_[kJsonElemSystemInfo]["os"]["memory"] = nlohmann::json::array();
+    json_[kJsonElemSystemInfo]["os"]["memory"].push_back({
         {"physical_bytes", system_info.os.memory.physical},
         {"swap_bytes", system_info.os.memory.swap}
         });
 
     // CPU info.
-    json_["system_info"]["cpu"] = nlohmann::json::array();
+    json_[kJsonElemSystemInfo]["cpu"] = nlohmann::json::array();
     for (uint32_t i = 0; i < system_info.cpus.size(); i++)
     {
         std::string cpu_name;
         RgdUtils::TrimLeadingAndTrailingWhitespace(system_info.cpus[i].name, cpu_name);
         if (user_config.is_extended_sysinfo)
         {
-            json_["system_info"]["cpu"].push_back({
+            json_[kJsonElemSystemInfo]["cpu"].push_back({
                 {"name", cpu_name },
                 {"architecture", system_info.cpus[i].architecture },
                 {"cpu_id", system_info.cpus[i].cpu_id },
@@ -98,7 +100,7 @@ void RgdSerializerJson::SetSystemInfoData(const Config& user_config, const syste
         }
         else
         {
-            json_["system_info"]["cpu"].push_back({
+            json_[kJsonElemSystemInfo]["cpu"].push_back({
                 {"name", cpu_name },
                 {"architecture", system_info.cpus[i].architecture },
                 {"cpu_id", system_info.cpus[i].cpu_id },
@@ -108,7 +110,7 @@ void RgdSerializerJson::SetSystemInfoData(const Config& user_config, const syste
     }
 
     // GPU info.
-    json_["system_info"]["gpu"] = nlohmann::json::array();
+    json_[kJsonElemSystemInfo]["gpu"] = nlohmann::json::array();
     for (uint32_t g = 0; g < system_info.gpus.size(); g++)
     {
         // Memory heaps.
@@ -149,7 +151,7 @@ void RgdSerializerJson::SetSystemInfoData(const Config& user_config, const syste
                     });
             }
 
-            json_["system_info"]["gpu"].push_back({
+            json_[kJsonElemSystemInfo]["gpu"].push_back({
                 {"name", system_info.gpus[g].name },
                 {"engine_clock_max_hz", system_info.gpus[g].asic.engine_clock_hz.max },
                 {"engine_clock_min_hz", system_info.gpus[g].asic.engine_clock_hz.min },
@@ -174,7 +176,7 @@ void RgdSerializerJson::SetSystemInfoData(const Config& user_config, const syste
         }
         else
         {
-            json_["system_info"]["gpu"].push_back({
+            json_[kJsonElemSystemInfo]["gpu"].push_back({
                 {"name", system_info.gpus[g].name },
                 {"device_id", system_info.gpus[g].asic.id_info.device },
                 {"device_revision_id", system_info.gpus[g].asic.id_info.e_rev },
@@ -379,6 +381,92 @@ void RgdSerializerJson::SetExecutionMarkerSummaryList(const Config& user_config,
     {
         RgdUtils::PrintMessage("failed to generate JSON representation of the list of markers in progress.", RgdMessageType::kError, user_config.is_verbose);
     }
+}
+
+void RgdSerializerJson::SetDriverExperimentsInfoData(const nlohmann::json& driver_experiments_json)
+{
+    const char*       kJsonElemExperimentsRgdOutputJson               = "experiments";
+    const char*       kJsonElemSettingNameRgdOutputJson               = "setting_name";
+    const char*       kJsonElemUserOverrideRgdOutputJson              = "user_override";
+    std::stringstream txt;
+
+    // Add "experiments" array under the system_info -> driver_info.
+    json_[kJsonElemSystemInfo][kJsonElemDriverInfo][kJsonElemExperimentsRgdOutputJson] = nlohmann::json::array();
+
+    try
+    {
+        if (driver_experiments_json.find(kJsonElemComponentsDriverOverridesChunk) != driver_experiments_json.end() &&
+            driver_experiments_json[kJsonElemComponentsDriverOverridesChunk].is_array() &&
+            driver_experiments_json.find(kJsonElemIsDriverExperimentsDriverOverridesChunk) != driver_experiments_json.end() &&
+            driver_experiments_json[kJsonElemIsDriverExperimentsDriverOverridesChunk].is_boolean())
+        {
+            const bool is_driver_experiments = driver_experiments_json[kJsonElemIsDriverExperimentsDriverOverridesChunk].get<bool>();
+
+            if (is_driver_experiments)
+            {
+                const nlohmann::json& components_json = driver_experiments_json[kJsonElemComponentsDriverOverridesChunk];
+
+                for (const auto& component : components_json)
+                {
+                    // Process "Experiments" component.
+                    if (component[kJsonElemComponentDriverOverridesChunk] == kJsonElemExperimentsDriverOverridesChunk)
+                    {
+                        const nlohmann::json& structures = component[kJsonElemStructuresDriverOverridesChunk];
+                        size_t                exp_seq_no = 1;
+                        for (auto it = structures.begin(); it != structures.end(); ++it)
+                        {
+                            const nlohmann::json& experiments = it.value();
+                            for (const auto& experiment : experiments)
+                            {
+                                // Check if the experiment was supported by the driver at the time of the crash.
+                                bool is_supported_experiment = (experiment[kJsonElemWasSupportedDriverOverridesChunk].is_boolean() &&
+                                                                experiment[kJsonElemWasSupportedDriverOverridesChunk]);
+                                if (is_supported_experiment)
+                                {
+                                    if (experiment[kJsonElemUserOverrideDriverOverridesChunk].is_boolean() &&
+                                        experiment[kJsonElemCurrentDriverOverridesChunk].is_boolean())
+                                    {
+                                        // The user override value.
+                                        bool is_user_override = experiment[kJsonElemUserOverrideDriverOverridesChunk].get<bool>();
+
+                                        // The value in the driver at the time of the crash.
+                                        bool is_current = experiment[kJsonElemCurrentDriverOverridesChunk].get<bool>();
+
+                                        if (is_user_override && is_current)
+                                        {
+                                            // Experiment is active only when both user override and current values are true.
+                                            json_[kJsonElemSystemInfo][kJsonElemDriverInfo][kJsonElemExperimentsRgdOutputJson].push_back(
+                                                {{kJsonElemSettingNameRgdOutputJson, experiment[kJsonElemSettingNameDriverOverridesChunk]},
+                                                 {kJsonElemUserOverrideRgdOutputJson, experiment[kJsonElemCurrentDriverOverridesChunk]}});
+                                        }
+                                    }
+                                    else
+                                    {
+                                        json_[kJsonElemSystemInfo][kJsonElemDriverInfo][kJsonElemExperimentsRgdOutputJson].push_back(
+                                            {{kJsonElemSettingNameRgdOutputJson, experiment[kJsonElemSettingNameDriverOverridesChunk]},
+                                             {kJsonElemUserOverrideRgdOutputJson, experiment[kJsonElemCurrentDriverOverridesChunk]}});
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            assert(false);
+            RgdUtils::PrintMessage(kErrorMsgInvalidDriverOverridesJson, RgdMessageType::kError, true);
+        }
+    }
+    catch (nlohmann::json::exception e)
+    {
+        assert(false);
+        std::stringstream error_msg;
+        error_msg << kErrorMsgFailedToParseDriverExperimentsInfo << " (" << e.what() << ")";
+        RgdUtils::PrintMessage(error_msg.str().c_str(), RgdMessageType::kError, true);
+    }
+    
 }
 
 bool RgdSerializerJson::SaveToFile(const Config& user_config) const

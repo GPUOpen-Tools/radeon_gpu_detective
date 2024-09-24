@@ -18,7 +18,7 @@ This guide will get you up and running with RGD, a tool for post-mortem GPU cras
 .. note::
    Review these requirements to make sure that this tool is relevant for your use case:
    
-   * RGD v1.1 supports **DirectX12** and **Vulkan**.
+   * RGD v1.3 supports **DirectX12** and **Vulkan**.
    * **Windows 10 or 11**.
    * **RDNA™2** (RX 6000 series) **or RDNA™3** (RX 7000 series) card.
    * Must **TDR** (we don't catch it if there is no TDR).
@@ -33,18 +33,35 @@ Capture GPU crash dump
 
 1. Before you start, if you ever changed the TdrLevel registry setting, make sure it is set to TdrLevelRecover(3).
 2. Run RDP GUI app (RadeonDeveloperPanel.exe).
-3. Under CAPTURE ->  "Available features", enable "Crash Analysis".
+3. Under CAPTURE -> "Available features", enable "Crash Analysis".
 
-.. image:: images/image2024-enable-ca.png
+.. image:: images/enable-crash-analysis.png
 
 4. Under the "Crash Analysis" tab, make sure that the Text checkbox is checked for the automatic crash summary generation.
 
-.. image:: images/image2024-select-text.png 
+.. image:: images/select-text-output-format.png 
 
 5. Run the crashing app and reproduce the TDR.
 
 .. note::
    You can always generate the text or JSON summary files from an .rgd file after has been captured. This can be done either by right-clicking the .rgd file entry in RDP and using the context menu or by invoking the rgd command line tool directly (run ``rgd -h`` to see the help manual).
+
+Capture GPU crash dump with Driver Experiments enabled
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+1. Under CAPTURE -> "Available features", enable "Driver Experiments"
+
+.. image:: images/enable-driver-experiments.png
+
+2. Under the "Driver Experiments" tab, select the API you want to enable the experiments for (DirectX12 or Vulkan).
+
+.. image:: images/driver-experiments-select-api.png
+
+3. Under the "Driver Experiments" tab, enable/select the experiments you want to activate.
+
+.. image:: images/driver-experiments-select-experiment.png
+
+4. Follow the steps in the previous section to capture the GPU crash dump.
 
 Crash analysis
 ^^^^^^^^^^^^^^
@@ -55,7 +72,7 @@ RGD doesn't offer a GUI tool to open these files.
 Instead, you can convert them to a report in text or JSON format directly from RDP.
 To do it, right-click and select “Open text summary”:
 
-.. image:: images/image2024-open-text-summary.png
+.. image:: images/open-text-summary.png
 
 
 This will open the .txt crash analysis file which includes information that can help narrow down the search for the crash's root cause::
@@ -112,4 +129,4 @@ of Sale.
 
 AMD, the AMD Arrow logo, Radeon, Ryzen, CrossFire, RDNA and combinations thereof are trademarks of Advanced Micro Devices, Inc. Other product names used in
 this publication are for identification purposes only and may be trademarks of their respective companies.
-© 2023 Advanced Micro Devices, Inc. All rights reserved.
+© 2024 Advanced Micro Devices, Inc. All rights reserved.

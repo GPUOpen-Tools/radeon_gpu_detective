@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2023 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  serializer different data elements.
@@ -23,7 +23,7 @@ class RgdSerializer
 public:
     // Serializes the given SystemInfo structure into a string.
     // Returns true if the file exists and false otherwise.
-    static bool ToString(const Config& user_config, const system_info_utils::SystemInfo& system_info, std::string& system_info_txt);
+    static bool ToString(const Config& user_config, const system_info_utils::SystemInfo& system_info, const nlohmann::json& driver_experiments_json, std::string& system_info_txt);
 
     // Serialize the input parameters information into a string.
     static void InputInfoToString(const Config&                        user_config,
