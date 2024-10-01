@@ -21,11 +21,11 @@ python pre_build.py
 
 The script supports different options such as using different MSVC toolsets versions. For the list of options run the script with `-h`.
 
-By default, a solution is generated for VS 2019. To generate a solution for a different VS version or to use a different MSVC toolchain use the `--vs` argument.
-For example, to generate the solution for VS 2022 with the VS 2022 toolchain (MSVC 17), run:
+By default, a solution is generated for VS 2022. To generate a solution for a different VS version or to use a different MSVC toolchain use the `--vs` argument.
+For example, to generate the solution for VS 2019 with the VS 2019 toolchain (MSVC 16), run:
 
 ``
-python pre_build.py --vs 2022
+python pre_build.py --vs 2019
 ``
 
 ## Running ##
@@ -172,6 +172,6 @@ The general time format used by RGD is `<hh:mm:ss:clks>` which stands for `<hour
 
 ## Capturing AMD GPU Crash Dump Files ##
 
-* To learn how to get started with RGD, see the [RGD quickstart guide](documentation/source/quickstart.rst). More information can be found on the [RGD help manual](documentation/source/help_manual.rst).
+* To learn how to get started with RGD, see the [RGD quickstart guide](documentation/source/index.rst). More information can be found on the [RGD help manual](documentation/source/help_manual.rst).
 * The complete documentation can be found in the [Radeon Developer Tool Suite archive](https://gpuopen.com/rdts-windows/) under ``help/rgd/index.html``.
 
