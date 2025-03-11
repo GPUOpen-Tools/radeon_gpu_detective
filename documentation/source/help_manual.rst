@@ -16,7 +16,7 @@ the crash analysis reports that the tool generates:
 System requirements
 -------------------
 * Operating system: Windows® 10 or 11.
-* GPU: RDNA™2 (RX 6000 series) or RDNA™3 (RX 7000 series) card.
+* GPU: RDNA™2 (RX 6000 series), RDNA™3 (RX 7000 series) or RDNA™ 4 (RX 9000 series) card.
 * Driver: Radeon Adrenalin™ driver with Crash Analysis support.
 
 .. note::
@@ -120,6 +120,8 @@ Here is an example for this section's contents::
 
 Note that marker hierarchy is denoted by ``/``, forming "paths" like ``marker/marker/draw_call``, similarly to paths in the hierarchy of file systems.
 
+.. _execution_marker_tree:
+
 Execution marker tree
 """""""""""""""""""""
 This section is titled ``EXECUTION MARKER TREE`` and contains a tree describing the marker status for each command buffer that was determined to be in flight during the crash.
@@ -168,6 +170,7 @@ The execution marker status is represented by the following symbols:
 
 * ``[X]`` finished
 * ``[>]`` in progress
+* ``[#]`` shader in flight
 * ``[ ]`` not started
 
 The status (not started, in progress, finished) is determined based on commands that are fetched by the GPU driver 
@@ -176,11 +179,11 @@ It means that further passes and draw calls may appear as ``in progress`` before
 even if there are barriers between them.
 
 .. note::
-   When passes and draw calls markers are shown as ``in progress``:
+   When passes and draw calls markers are shown as ``in progress`` (or ``shader in flight``):
    
    * If they are meant to execute **in parallel** (e.g. drawing 3D objects into the G-buffer), it is possible that they were really in progress when the crash happened
      and any of them could be the crashing one.
-   * If they are known to execute **serially with barriers between them** (e.g. screen-space postprocessing passes), then likely the first ``in progress`` marker is the one
+   * If they are known to execute **serially with barriers between them** (e.g. screen-space postprocessing passes), then likely the first ``in progress`` (or ``shader in flight``) marker is the one
      that was executing its shader when the crash happened.
 
 Execution marker tree features:
@@ -190,6 +193,7 @@ Execution marker tree features:
 * Vertex and instance counts are provided for draw calls.
 * Index and instance counts are provided for indexed draw calls.
 * In the text summary output, barriers are printed with dashed line to visually separate the set of markers in-between barriers.
+* When the crash dump is captured with :ref:`hardware_crash_analysis` feature enabled, a new marker status ``shader in flight`` is added.
 
 The tree structure and contents are also configurable through the RDP options (or using command line options if running the RGD command line tool directly):
 
@@ -266,8 +270,133 @@ Here is an example of an Image in the ``Associated resources`` section::
 .. note::
    * The ``Attributes`` section will be different for different resource types (for example, a buffer will not have an ``Image format`` attribute).
    * As you can see, each resource will also have its own ``resource timeline`` field which will list only the events that apply to that specific resource.
-   
-   
+
+.. _hardware_crash_analysis:
+
+Hardware Crash Analysis
+"""""""""""""""""""""""
+
+RGD v1.4 brings a powerful new feature: Hardware Crash Analysis. When enabled, RGD collects low-level information about the GPU hardware state upon crash and augments the information that is presented in the Crash Analysis (.rgd) output file with meaningful insights.
+
+**New execution marker for in-flight shaders**
+
+With Hardware Crash Analysis, a new execution marker state ``shader in flight`` is added. RGD correlates the wavefronts in flight to the execution markers and marks nodes that had a running wavefront during the crash and mark the node with ``[#]`` symbol.
+
+Here is an example execution marker tree::
+
+    Command Buffer ID: 0x617 (Queue type: Direct)
+    =============================================
+    [>] "Frame 362 CL0"
+     ├─[X] "Depth + Normal + Motion Vector PrePass"
+     ├─[X] "Shadow Cascade Pass"
+     ├─[X] "TLAS Build"
+     ├─[X] "Classify tiles"
+     ├─[X] "Trace shadows"
+     ├─[X] ----------Barrier----------
+     ├─[X] "Denoise shadows"
+     ├─[X] "GltfPbrPass::DrawBatchList"
+     ├─[X] "Skydome Proc"
+     ├─[X] "GltfPbrPass::DrawBatchList"
+     ├─[>] "DownSamplePS"
+     │  ├─[X] ----------Barrier----------
+     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Pixel}>
+     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Pixel}>
+     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Pixel}>
+     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Pixel}>
+     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Pixel}>
+     │  └─[>] ----------Barrier----------
+     ├─[>] "Bloom"
+     │  ├─[>] "BlurPS"
+     │  │  ├─[>] ----------Barrier----------
+     │  │  ├─[#] Draw(VertexCount=3, InstanceCount=1) <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Pixel}>
+     │  │  ├─[#] Draw(VertexCount=3, InstanceCount=1) <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Pixel}>
+     │  │  └─[ ] ----------Barrier----------
+     │  ├─[ ] ----------Barrier----------
+     │  ├─[ ] Draw(VertexCount=3, InstanceCount=1)
+     │  ├─[ ] Draw(VertexCount=3, InstanceCount=1)
+     │  ├─[ ] "BlurPS"
+     │  ├─[ ] Draw(VertexCount=3, InstanceCount=1)
+     │  └─[ ] ----------Barrier----------
+     └─[ ] "Indirect draw simple"
+
+**Details about the crashing shader**
+
+For each marker node annotated with ``[#]`` (*shader in flight*), a list of unique associated SHADER INFO section IDs, API PSO hash and a list of API stages for each associated shader are provided.
+As you can see, the annotation of the in-flight execution markers contains a reference to ShaderInfoID1. This is a handle which you can use to jump to a new section that is added to the RGD output file: the SHADER INFO section. The name ShaderInfoID1 is arbitrary. Its purpose is to serve as a unique string identifier in the scope of the RGD output text file, which will allow you to jump quickly to the relevant sections of the text file when searching that string.
+
+**SHADER INFO**
+
+This section is titled ``SHADER INFO`` and contains a low-level information about the shaders which are identified as in-flight at the time of the crash.
+
+The ``SHADER INFO`` section will list the following information for each shader that was in flight at the time of the crash::
+  * **Shader Info ID** : Arbitrary identifier for the shader info.
+  * **API PSO hash**   : Hash value that uniquely identifies the API Pipeline State Object (PSO) that was used to create the shader.
+  * **API shader hash**: Hash value that uniquely identifies the shader.
+  * **API stage**      : API stage that the shader was used in (e.g. Vertex, Pixel, Compute).
+  * **Disassembly**    : Disassembly of the shader showing the consolidated pointers to instruction/s which were being executed by one or more wavefronts at the time of the crash.
+
+Here is an example of a shader info::
+
+    ===========
+    SHADER INFO
+    ===========
+
+    Shader info ID : ShaderInfoID1
+    API PSO hash   : 0xc192105aa67f7e88
+    API shader hash: 0x9e7e544426c404defd8c0ea8a6f65c3b (high: 0x9e7e544426c404de, low: 0xfd8c0ea8a6f65c3b)
+    API stage      : Pixel
+
+    Disassembly
+    ===========
+        .
+        .
+        .
+        v_interp_p2_f32 v2, v3, v1, v0 wait_exp:7                  // 000000000360: CD010702 04020303
+        s_mov_b32 s4, s5                                           // 000000000368: BE840005
+        s_mov_b32 s5, s9                                           // 00000000036C: BE850009
+        s_load_b256 s[4:11], s[4:5], null                          // 000000000370: F40C0102 F8000000
+        s_waitcnt lgkmcnt(0)                                       // 000000000378: BF89FC07
+        v_mul_f32_e64 v3, 2.0, s0                                  // 00000000037C: D5080003 000000F4
+        v_mul_f32_e64 v0, 2.0, s1                                  // 000000000384: D5080000 000002F4
+        s_delay_alu instid0(VALU_DEP_2) | instskip(NEXT) | instid1(VALU_DEP_2)// 00000000038C: BF870112
+        v_sub_f32_e32 v1, v4, v3                                   // 000000000390: 08020704
+        v_sub_f32_e32 v3, v2, v0                                   // 000000000394: 08060102
+        v_fma_f32 v0, s0, 2.0, v4                                  // 000000000398: D6130000 0411E800
+        v_fma_f32 v6, s1, 2.0, v2                                  // 0000000003A0: D6130006 0409E801
+        s_mov_b32 s12, 0x8007092                                   // 0000000003A8: BE8C00FF 08007092
+        s_mov_b32 s13, 0xfff000                                    // 0000000003B0: BE8D00FF 00FFF000
+        s_mov_b32 s14, 0x64500000                                  // 0000000003B8: BE8E00FF 64500000
+        s_mov_b32 s15, 0x80000000                                  // 0000000003C0: BE8F00FF 80000000
+        s_clause 0x8                                               // 0000000003C8: BF850008
+    >   image_sample  v[8:11], [v0, v6], s[4:11], s[12:15] dmask:0xf dim:SQ_RSRC_IMG_2D// 0000000003CC: F06C0F05 0C010800 00000006   <-- ***PAGE FAULT SUSPECT (128 waves)***
+        image_sample  v[12:15], [v4, v6], s[4:11], s[12:15] dmask:0xf dim:SQ_RSRC_IMG_2D// 0000000003D8: F06C0F05 0C010C04 00000006
+        image_sample  v[18:21], [v1, v6], s[4:11], s[12:15] dmask:0xf dim:SQ_RSRC_IMG_2D// 0000000003E4: F06C0F05 0C011201 00000006
+        image_sample  v[22:25], [v0, v2], s[4:11], s[12:15] dmask:0xf dim:SQ_RSRC_IMG_2D// 0000000003F0: F06C0F05 0C011600 00000002
+        image_sample  v[26:29], [v4, v2], s[4:11], s[12:15] dmask:0xf dim:SQ_RSRC_IMG_2D// 0000000003FC: F06C0F05 0C011A04 00000002
+        image_sample v[30:33], v[1:2], s[4:11], s[12:15] dmask:0xf dim:SQ_RSRC_IMG_2D// 000000000408: F06C0F04 0C011E01
+        image_sample  v[34:37], [v0, v3], s[4:11], s[12:15] dmask:0xf dim:SQ_RSRC_IMG_2D// 000000000410: F06C0F05 0C012200 00000003
+        image_sample  v[4:7], [v4, v3], s[4:11], s[12:15] dmask:0xf dim:SQ_RSRC_IMG_2D// 00000000041C: F06C0F05 0C010404 00000003
+        image_sample  v[0:3], [v1, v3], s[4:11], s[12:15] dmask:0xf dim:SQ_RSRC_IMG_2D// 000000000428: F06C0F05 0C010001 00000003
+        s_cmp_eq_i32 s2, 0                                         // 000000000434: BF008002
+        s_cbranch_scc1 _L5                                         // 000000000438: BFA20041
+        s_waitcnt vmcnt(7)                                         // 00000000043C: BF891FF7
+        v_add_f32_e32 v8, v8, v12                                  // 000000000440: 06101908
+        v_add_f32_e32 v9, v9, v13                                  // 000000000444: 06121B09
+        v_add_f32_e32 v10, v10, v14                                // 000000000448: 06141D0A
+        v_add_f32_e32 v11, v11, v15                                // 00000000044C: 06161F0B
+        s_waitcnt vmcnt(6)                                         // 000000000450: BF891BF7
+        s_delay_alu instid0(VALU_DEP_4) | instskip(NEXT) | instid1(VALU_DEP_4)// 000000000454: BF870214
+        v_add_f32_e32 v8, v18, v8                                  // 000000000458: 06101112
+        .
+        .
+        .
+
+The example SHADER INFO section contains a shader (ShaderInfoID1), which matches the execution marker tree. Alongside the shader metadata you can see the relevant subset of the crashing shader's disassembly. If the crash was caused by a page fault that the shader triggered, RGD will mark the offending instruction for you with a ``>`` prefix in the relevant disassembly line and an annotation that marks the page fault culprit suspect and the number of wavefronts that were executing that instruction at the time of the crash. By default, the tool will only include the relevant subset of the shader's disassembly in the output file, in order to remove as much noise as possible. Around a page fault suspect instruction, you will find a small number of instructions to give you the context in which the suspect instruction was executing in. The vertical . . . lines denote filtered instructions. 
+In case that you do need to see the full shader disassembly, you can do that by manually running the rgd command line tool with the AMD GPU crash dump (.rgd) file as the input and using the --all-disassembly command line option (refer to the rgd command line tool help manual for more information by running rgd -h).
+
+.. note::
+  For the tool to be able to retrieve the additional low-level information for your GPU crash case a few things need to happen. First, you must make sure that the Hardware Crash Analysis checkbox is checked in Radeon Developer Panel's (RDP) Crash Analysis tab (that is the case by default). In addition, since this version of the tool focuses on offending shaders, the GPU crash obviously needs to be triggered by a shader-executing hardware block. If the GPU crash happened somewhere else, no shader will be associated with the execution tree markers, and you will not have the benefits of the new Hardware Crash Analysis mode. However, in the case that your crash case is supported by RGD, you can count on the "standard" (RGD v1.3) information to be included, whether or not the Hardware Crash Analysis feature was applicable to your crash case.
+
 Interpreting the results
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -308,8 +437,8 @@ Let's elaborate:
 3. When **no page fault was detected**, it likely means the crash was not related to memory access,
    but a different other type of problem, e.g. a shader hang due to timeout (too long execution) or an infinite loop.
 
-   
-Scope of v1.3
+
+Scope of v1.4
 -------------
 RGD is designed to capture **GPU crashes** on Windows. If a GPU fault (such as memory page fault or infinite loop in a shader) causes the GPU driver to not respond to the OS for some pre-determined 
 time period (the default on Windows is 2 seconds), the OS will detect that and attempt to restart or remove the device. This mechanism is also known as "TDR" (Timeout Detection and Recovery) and is what we 
@@ -327,6 +456,9 @@ Please use CPU debugging mechanisms like Microsoft Visual Studio to investigate 
 Rendering code which **incorrectly uses D3D12 or Vulkan** may also fail purely on the CPU and not reach the graphics driver or the GPU. 
 Therefore, such crashes are not captured by RGD. They usually result in ``DXGI_ERROR_INVALID_CALL`` error code returned, and 
 are usually detected by the D3D12 Debug Layer.
+
+A powerful new feature ``Hardware Crash Analysis`` is added. See the section :ref:`hardware_crash_analysis` for more details.
+
 
 .. note::
    When debugging a problem in any D3D12 application, first **enable the D3D12 Debug Layer** and

@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  serializer for memory resource information.
@@ -55,8 +55,8 @@ public:
 
 private:
 
-    class pImplResourceInfoSerializer;
-    std::unique_ptr<pImplResourceInfoSerializer> resource_info_serializer_impl_;
+    class Impl;
+    std::unique_ptr<Impl> resource_info_serializer_impl_;
 
 };
 

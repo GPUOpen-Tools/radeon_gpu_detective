@@ -1,3 +1,5 @@
+# Copyright © Advanced Micro Devices, Inc. All rights reserved.
+#
 #!/usr/bin/python
 
 import sys

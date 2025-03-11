@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  utilities for parsing raw data.
@@ -17,10 +17,13 @@
 
 // RGD local.
 #include "rgd_utils.h"
+#include "rgd_hash.h"
 
 // Dev driver.
 #include "dev_driver/include/rgdevents.h"
-#include "rgd_data_types.h"
+
+// Initialize the static variable.
+bool RgdParsingUtils::is_page_fault_ = false;
 
 bool RgdParsingUtils::ParseCrashDataChunks(rdf::ChunkFile& chunk_file, const char* chunk_identifier, CrashData& umd_crash_data, CrashData& kmd_crash_data, std::string& error_msg)
 {
@@ -222,6 +225,41 @@ bool RgdParsingUtils::ParseCrashDataChunks(rdf::ChunkFile& chunk_file, const cha
                     case KmdEventId::RgdEventVmPageFault:
                     {
                         VmPageFaultEvent* curr_event = reinterpret_cast<VmPageFaultEvent*>(curr_crash_data.chunk_payload.data() + bytes_read);
+                        current_time += (curr_event->header.delta * (uint64_t)timeUnit);
+                        curr_crash_data.events.push_back(RgdEventOccurrence(curr_event, current_time));
+                        bytes_read += sizeof(DDEventHeader) + curr_event->header.eventSize;
+                        
+                        // Set the crash type as page fault.
+                        SetIsPageFault(true);
+                    }
+                    break;
+                    case KmdEventId::RgdEventShaderWaves:
+                    {
+                        ShaderWaves* curr_event = reinterpret_cast<ShaderWaves*>(curr_crash_data.chunk_payload.data() + bytes_read);
+                        current_time += (curr_event->header.delta * (uint64_t)timeUnit);
+                        curr_crash_data.events.push_back(RgdEventOccurrence(curr_event, current_time));
+                        bytes_read += sizeof(DDEventHeader) + curr_event->header.eventSize;
+                    }
+                    break;
+                    case KmdEventId::RgdEventSeInfo:
+                    {
+                        SeInfo* curr_event = reinterpret_cast<SeInfo*>(curr_crash_data.chunk_payload.data() + bytes_read);
+                        current_time += (curr_event->header.delta * (uint64_t)timeUnit);
+                        curr_crash_data.events.push_back(RgdEventOccurrence(curr_event, current_time));
+                        bytes_read += sizeof(DDEventHeader) + curr_event->header.eventSize;
+                    }
+                    break;
+                    case KmdEventId::RgdEventMmrRegisters:
+                    {
+                        MmrRegistersData* curr_event = reinterpret_cast<MmrRegistersData*>(curr_crash_data.chunk_payload.data() + bytes_read);
+                        current_time += (curr_event->header.delta * (uint64_t)timeUnit);
+                        curr_crash_data.events.push_back(RgdEventOccurrence(curr_event, current_time));
+                        bytes_read += sizeof(DDEventHeader) + curr_event->header.eventSize;
+                    }
+                    break;
+                    case KmdEventId::RgdEventWaveRegisters:
+                    {
+                        WaveRegistersData* curr_event = reinterpret_cast<WaveRegistersData*>(curr_crash_data.chunk_payload.data() + bytes_read);
                         current_time += (curr_event->header.delta * (uint64_t)timeUnit);
                         curr_crash_data.events.push_back(RgdEventOccurrence(curr_event, current_time));
                         bytes_read += sizeof(DDEventHeader) + curr_event->header.eventSize;
@@ -461,6 +499,15 @@ std::string RgdParsingUtils::KmdRgdEventIdToString(uint8_t event_id)
     case (uint8_t)KmdEventId::RgdEventVmPageFault:
         ret << "PAGE FAULT";
         break;
+    case (uint8_t)KmdEventId::RgdEventShaderWaves:
+        ret << "SHADER WAVE";
+        break;
+    case (uint8_t)KmdEventId::RgdEventMmrRegisters:
+        ret << "MMR REGISTERS DATA";
+        break;
+    case (uint8_t)KmdEventId::RgdEventSeInfo:
+        ret << "SE INFO";
+        break;
     default:
         // Shouldn't get here.
         assert(false);
@@ -669,4 +716,175 @@ bool RgdParsingUtils::ParseDriverOverridesChunk(rdf::ChunkFile& chunk_file, cons
     ret = error_txt.str().empty();
 
     return ret;
+}
+
+bool RgdParsingUtils::ParseCodeObjectChunk(rdf::ChunkFile&                              chunk_file,
+                                           const char*                                  chunk_identifier,
+                                           std::map<Rgd128bitHash, CodeObject>& code_objects_map)
+{
+    bool              ret         = true;
+    const int64_t     kChunkCount = chunk_file.GetChunkCount(chunk_identifier);
+    const char*       kErrorMsg   = "failed to extract the Code Objects chunk information";
+    std::stringstream error_txt;
+
+    // Parse CodeObject chunk.
+    if (kChunkCount > 0)
+    {
+        const uint32_t kChunkVersion = chunk_file.GetChunkVersion(chunk_identifier);
+        if (kChunkVersion <= kChunkMaxSupportedVersionCodeObject)
+        {
+            for (size_t chunk_idx = 0; chunk_idx < kChunkCount; chunk_idx++)
+            {
+                CodeObject code_object;
+                chunk_file.ReadChunkHeaderToBuffer(chunk_identifier, chunk_idx, &code_object.chunk_header);
+                //assert(code_object.chunk_header.code_object_hash == 0);
+                uint64_t payload_size = chunk_file.GetChunkDataSize(chunk_identifier, chunk_idx);
+                if (payload_size > 0)
+                {
+                    code_object.chunk_payload.resize(payload_size, 0);
+                    chunk_file.ReadChunkDataToBuffer(chunk_identifier, chunk_idx, code_object.chunk_payload.data());
+                    //assert(code_object_map.find(code_object.chunk_header.code_object_hash) == code_object_map.end());
+                    code_objects_map[code_object.chunk_header.code_object_hash] = std::move(code_object);
+                }
+                else
+                {
+                    error_txt << kErrorMsg << " (invalid chunk payload size [" << kChunkIdCodeObject << "])";
+                    RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+                }
+            }
+        }
+        else
+        {
+            error_txt << kErrorMsg << " (unsupported chunk version: " << kChunkVersion << " [" << kChunkIdCodeObject << "])";
+            RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+        }
+    }
+    else
+    {
+        error_txt << kErrorMsg << " (Code Objects information missing [" << kChunkIdCodeObject << "])";
+        RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+    }
+
+    ret = error_txt.str().empty();
+
+    return ret;
+}
+
+bool RgdParsingUtils::ParseCodeObjectLoadEventChunk(rdf::ChunkFile&                   chunk_file,
+                                                    const char*                       chunk_identifier,
+                                                    std::vector<RgdCodeObjectLoadEvent>& code_object_load_events)
+{
+    bool              ret         = true;
+    const int64_t     kChunkCount = chunk_file.GetChunkCount(chunk_identifier);
+    const char*       kErrorMsg   = "failed to extract the Code Object Load Events chunk information";
+    std::stringstream error_txt;
+
+    // Parse CodeObjectLoadEvent chunk.
+    if (kChunkCount > 0)
+    {
+        const uint32_t kChunkVersion = chunk_file.GetChunkVersion(chunk_identifier);
+        if (kChunkVersion <= kChunkMaxSupportedVersionCOLoadEvent)
+        {
+            for (size_t chunk_idx = 0; chunk_idx < kChunkCount; chunk_idx++)
+            {
+                RgdCodeObjectLoadEventHeader chunk_header;
+                chunk_file.ReadChunkHeaderToBuffer(chunk_identifier, chunk_idx, &chunk_header);
+                uint64_t payload_size = chunk_file.GetChunkDataSize(chunk_identifier, chunk_idx);
+                if (payload_size > 0)
+                {
+                    std::vector<uint8_t> payload_data(payload_size, 0);
+                    chunk_file.ReadChunkDataToBuffer(chunk_identifier, chunk_idx, payload_data.data());
+
+                    // Parse the Code Object Load Events chunk payload data.
+                    uint64_t bytes_read = 0;
+
+                    while (bytes_read < payload_size)
+                    {
+                        RgdCodeObjectLoadEvent* event = reinterpret_cast<RgdCodeObjectLoadEvent*>(payload_data.data() + bytes_read);
+                        code_object_load_events.push_back(*event);
+                        bytes_read += sizeof(RgdCodeObjectLoadEvent);
+                    }
+                    assert(bytes_read == payload_size);
+                }
+                else
+                {
+                    error_txt << kErrorMsg << " (invalid chunk payload size [" << kChunkIdCOLoadEvent << "])";
+                    RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+                }
+
+            }
+        }
+        else
+        {
+            error_txt << kErrorMsg << " (unsupported chunk version: " << kChunkVersion << " [" << kChunkIdCOLoadEvent << "])";
+            RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+        }
+    }
+    else
+    {
+        error_txt << kErrorMsg << " (Code Object Load Events information missing [" << kChunkIdCOLoadEvent << "])";
+        RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+    }
+
+    ret = error_txt.str().empty();
+
+    return ret;
+}
+
+bool RgdParsingUtils::PsoCorrelationChunk(rdf::ChunkFile& chunk_file, const char* chunk_identifier, std::vector<RgdPsoCorrelation>& pso_correlations)
+{
+    bool              ret         = true;
+    const int64_t     kChunkCount = chunk_file.GetChunkCount(chunk_identifier);
+    const char*       kErrorMsg   = "failed to extract the PSO Correlation chunk information";
+    std::stringstream error_txt;
+
+    // Parse PsoCorrelation chunk.
+    if (kChunkCount > 0)
+    {
+        const uint32_t kChunkVersion = chunk_file.GetChunkVersion(chunk_identifier);
+        if (kChunkVersion <= kChunkMaxSupportedVersionPsoCorrelation)
+        {
+            for (size_t chunk_idx = 0; chunk_idx < kChunkCount; chunk_idx++)
+            {
+                RgdPsoCorrelationHeader chunk_header;
+                chunk_file.ReadChunkHeaderToBuffer(chunk_identifier, chunk_idx, &chunk_header);
+                uint64_t payload_size = chunk_file.GetChunkDataSize(chunk_identifier, chunk_idx);
+                if (payload_size > 0)
+                {
+                    assert((payload_size / sizeof(RgdPsoCorrelation)) == chunk_header.count);
+                    pso_correlations.resize(chunk_header.count);
+                    chunk_file.ReadChunkDataToBuffer(chunk_identifier, chunk_idx, pso_correlations.data());
+                }
+                else
+                {
+                    error_txt << kErrorMsg << " (invalid chunk payload size [" << kChunkIdPsoCorrelation << "])";
+                    RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+                }
+            }
+        }
+        else
+        {
+            error_txt << kErrorMsg << " (unsupported chunk version: " << kChunkVersion << " [" << kChunkIdPsoCorrelation << "])";
+            RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+        }
+    }
+    else
+    {
+        error_txt << kErrorMsg << " (PSO Correlation information missing [" << kChunkIdPsoCorrelation << "])";
+        RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+    }
+
+    ret = error_txt.str().empty();
+
+    return ret;
+}
+
+void RgdParsingUtils::SetIsPageFault(bool is_page_fault)
+{
+    is_page_fault_ = is_page_fault;
+}
+
+bool RgdParsingUtils::GetIsPageFault()
+{
+    return is_page_fault_;
 }

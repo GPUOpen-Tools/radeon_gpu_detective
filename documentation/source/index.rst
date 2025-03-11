@@ -18,9 +18,9 @@ This guide will get you up and running with RGD, a tool for post-mortem GPU cras
 .. note::
    Review these requirements to make sure that this tool is relevant for your use case:
    
-   * RGD v1.3 supports **DirectX12** and **Vulkan**.
+   * RGD v1.4 supports **DirectX12** and **Vulkan**.
    * **Windows 10 or 11**.
-   * **RDNA™2** (RX 6000 series) **or RDNA™3** (RX 7000 series) card.
+   * **RDNA™2** (RX 6000 series), **RDNA™3** (RX 7000 series) or **RDNA™ 4** (RX 9000 series) card.
    * Must **TDR** (we don't catch it if there is no TDR).
    * **Reproducible crashes** (you will have to reproduce the crash to capture a GPU crash dump).
 
@@ -37,7 +37,7 @@ Capture GPU crash dump
 
 .. image:: images/enable-crash-analysis.png
 
-4. Under the "Crash Analysis" tab, make sure that the Text checkbox is checked for the automatic crash summary generation.
+4. Under the "Crash Analysis" tab, make sure that the Text checkbox is checked for the automatic crash summary generation. Please note, Hardware Crash Analysis feature is enabled by default. For more information about the Hardware Crash Analysis feature, please see the RGD :doc:`help_manual`.
 
 .. image:: images/select-text-output-format.png 
 
@@ -92,17 +92,17 @@ This will open the .txt crash analysis file which includes information that can 
      ├─[X] "GltfPbrPass::DrawBatchList"
      ├─[>] "DownSamplePS"
      │  ├─[X] ----------Barrier----------
-     │  ├─[>] Draw(VertexCount=3, InstanceCount=1)
-     │  ├─[>] Draw(VertexCount=3, InstanceCount=1)
-     │  ├─[>] Draw(VertexCount=3, InstanceCount=1)
-     │  ├─[>] Draw(VertexCount=3, InstanceCount=1)
-     │  ├─[>] Draw(VertexCount=3, InstanceCount=1)
+     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Vertex}>
+     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Vertex}>
+     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Vertex}>
+     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Vertex}>
+     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Vertex}>
      │  └─[>] ----------Barrier----------
      ├─[>] "Bloom"
      │  ├─[>] "BlurPS"
      │  │  ├─[>] ----------Barrier----------
-     │  │  ├─[>] Draw(VertexCount=3, InstanceCount=1)
-     │  │  ├─[>] Draw(VertexCount=3, InstanceCount=1)
+     │  │  ├─[#] Draw(VertexCount=3, InstanceCount=1) <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID2}, API PSO hash = 0xe1b221d7ee5e85c9, API stages: {Vertex}>
+     │  │  ├─[#] Draw(VertexCount=3, InstanceCount=1) <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID2}, API PSO hash = 0xe1b221d7ee5e85c9, API stages: {Vertex}>
      │  │  └─[ ] ----------Barrier----------
      │  ├─[ ] ----------Barrier----------
      │  ├─[ ] Draw(VertexCount=3, InstanceCount=1)
@@ -129,4 +129,4 @@ of Sale.
 
 AMD, the AMD Arrow logo, Radeon, Ryzen, CrossFire, RDNA and combinations thereof are trademarks of Advanced Micro Devices, Inc. Other product names used in
 this publication are for identification purposes only and may be trademarks of their respective companies.
-© 2024 Advanced Micro Devices, Inc. All rights reserved.
+© 2025 Advanced Micro Devices, Inc. All rights reserved.

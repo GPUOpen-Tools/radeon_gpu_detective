@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  serializer to JSON format.
@@ -20,6 +20,7 @@
 #include "rgd_data_types.h"
 #include "rgd_resource_info_serializer.h"
 #include "rgd_marker_data_serializer.h"
+#include "rgd_enhanced_crash_info_serializer.h"
 
 // JSON Schema version
 #define STRINGIFY_JSON_SCHEMA_VERSION(major, minor) STRINGIFY_MACRO(major) "." STRINGIFY_MACRO(minor)
@@ -30,6 +31,7 @@
 // *** INTERNALLY-LINKED AUXILIARY CONSTANTS - BEGIN ***
 
 static const char* kStrInfoNoCmdBuffersInFlight = "no command buffers were in flight during crash.";
+static const char* kStrNoInFlightShaderInfo     = "in flight shader info not available.";
 
 // *** INTERNALLY-LINKED AUXILIARY CONSTANTS - END ***
 
@@ -71,6 +73,9 @@ public:
 
     // Set Driver Experiments info.
     void SetDriverExperimentsInfoData(const nlohmann::json& driver_experiments_json);
+
+    // Set shader info.
+    void SetShaderInfo(const Config& user_config, RgdEnhancedCrashInfoSerializer& enhanced_crash_info_serializer);
 
     // Saves the JSON contents to a file.
     bool SaveToFile(const Config& user_config) const;

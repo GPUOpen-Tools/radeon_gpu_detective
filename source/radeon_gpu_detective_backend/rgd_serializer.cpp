@@ -1,20 +1,20 @@
 //=============================================================================
-// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  serializer different data elements.
 //=============================================================================
 // Local.
+#include "rgd_parsing_utils.h"
 #include "rgd_serializer.h"
 #include "rgd_utils.h"
-#include "rgd_parsing_utils.h"
 #include "rgd_version_info.h"
 
 // C++.
-#include <string>
-#include <sstream>
 #include <cassert>
 #include <iomanip>
+#include <string>
+#include <sstream>
 
 // Clock speed units.
 enum class ClockSpeedUnit {kHz, kKHz, kMHz, kGHz};
@@ -113,7 +113,7 @@ static std::string GetDriverExperimentsString(const nlohmann::json& driver_exper
         RgdUtils::PrintMessage(error_msg.str().c_str(), RgdMessageType::kError, true);
     }
 
-    const char* kDriverExperimentsSectionStr     = "Experiments : ";
+    const char* kDriverExperimentsSectionStr     = "Experiments: ";
     const char* kDriverExperimentsActiveMsgPart1 = "total of ";
     const char* kDriverExperimentsActiveMsgPart2 = " Driver Experiments were active while capturing the AMD GPU crash dump:";
     const char* kDriverExperimentsNotActiveMsg   = "no driver experiments were enabled.";
@@ -131,6 +131,12 @@ static std::string GetDriverExperimentsString(const nlohmann::json& driver_exper
     }
 
     return driver_experiments_txt.str();
+}
+
+static uint64_t CombineRegisterValue(uint32_t high_val, uint32_t low_val)
+{
+    uint64_t combined_value = ((uint64_t)high_val << 32) | low_val;
+    return combined_value;
 }
 
 bool RgdSerializer::ToString(const Config& user_config, const system_info_utils::SystemInfo& system_info, const nlohmann::json& driver_experiments_json, std::string& system_info_txt)
@@ -208,10 +214,10 @@ bool RgdSerializer::ToString(const Config& user_config, const system_info_utils:
             txt << "\tGPU index (order as seen by system): " << system_info.gpus[i].asic.gpu_index << std::endl;
         }
         txt << "\tDevice ID: " << "0x" << std::hex << system_info.gpus[i].asic.id_info.device << std::dec << std::endl;
-        txt << "\tDevice revision ID: " << "0x" << std::hex << system_info.gpus[i].asic.id_info.e_rev << std::dec << std::endl;
+        txt << "\teRev: " << "0x" << std::hex << system_info.gpus[i].asic.id_info.e_rev << std::dec << std::endl;
         txt << "\tDevice family ID: " << "0x" << std::hex << system_info.gpus[i].asic.id_info.family << std::dec << std::endl;
         txt << "\tDevice graphics engine ID: " << "0x" << std::hex << system_info.gpus[i].asic.id_info.gfx_engine << std::dec << std::endl;
-        txt << "\tDevice PCI revision ID: " << "0x" << std::hex << system_info.gpus[i].asic.id_info.revision << std::dec << std::endl;
+        txt << "\tRevision: " << "0x" << std::hex << system_info.gpus[i].asic.id_info.revision << std::dec << std::endl;
         txt << "\tBig SW version: " << system_info.gpus[i].big_sw.major << "." << system_info.gpus[i].big_sw.minor << "." << system_info.gpus[i].big_sw.misc << std::endl;
         txt << "\tMemory type: " << system_info.gpus[i].memory.type << std::endl;
         if (user_config.is_extended_sysinfo)
@@ -451,6 +457,93 @@ std::string RgdSerializer::EventVmPageFaultToString(const VmPageFaultEvent& page
     return ret.str();
 }
 
+std::string RgdSerializer::EventShaderWaveToString(const ShaderWaves& shader_wave_event, const std::string& offset_tabs)
+{
+    std::stringstream ret;
+    ret << RgdEventHeaderToStringKmd(shader_wave_event, offset_tabs) << std::endl;
+    ret << offset_tabs << "Version: " << shader_wave_event.version << std::endl;
+    ret << offset_tabs << "GPU ID: " << shader_wave_event.gpuId << std::endl;
+    ret << offset_tabs << "Type of Hang: " << RgdUtils::GetHangTypeString(shader_wave_event.typeOfHang) << std::endl;
+    ret << offset_tabs << "GrbmStatusSeRegs version: " << shader_wave_event.grbmStatusSeRegs.version << std::endl;
+    ret << offset_tabs << offset_tabs << "GrbmStatusSe0: " << shader_wave_event.grbmStatusSeRegs.grbmStatusSe0 << std::endl;
+    ret << offset_tabs << offset_tabs << "GrbmStatusSe1: " << shader_wave_event.grbmStatusSeRegs.grbmStatusSe1 << std::endl;
+    ret << offset_tabs << offset_tabs << "GrbmStatusSe2: " << shader_wave_event.grbmStatusSeRegs.grbmStatusSe2 << std::endl;
+    ret << offset_tabs << offset_tabs << "GrbmStatusSe3: " << shader_wave_event.grbmStatusSeRegs.grbmStatusSe3 << std::endl;
+    ret << offset_tabs << offset_tabs << "GrbmStatusSe4: " << shader_wave_event.grbmStatusSeRegs.grbmStatusSe4 << std::endl;
+    ret << offset_tabs << offset_tabs << "GrbmStatusSe5: " << shader_wave_event.grbmStatusSeRegs.grbmStatusSe5 << std::endl;
+    ret << offset_tabs << "Number of hung waves: " << shader_wave_event.numberOfHungWaves << std::endl;
+    ret << offset_tabs << "Number of active waves: " << shader_wave_event.numberOfActiveWaves << std::endl;
+
+    for (size_t wave_idx = 0; wave_idx < shader_wave_event.numberOfActiveWaves + shader_wave_event.numberOfHungWaves; ++wave_idx)
+    {
+        if (wave_idx < shader_wave_event.numberOfHungWaves)
+        {
+            ret << offset_tabs << "Hung wave info " << wave_idx << ":" << std::endl;
+        }
+        else
+        {
+            ret << offset_tabs << "Active wave info " << wave_idx << ":" << std::endl;
+        }
+        const WaveInfo& current_wave_info = shader_wave_event.waveInfos[wave_idx];
+        ret << offset_tabs << offset_tabs << "Version: " << current_wave_info.version << std::endl;
+        ret << offset_tabs << offset_tabs << "Shader id: 0x" << std::hex << current_wave_info.shaderId << std::dec << std::endl;
+    }
+    return ret.str();
+}
+
+std::string RgdSerializer::EventMmrRegisterDataToString(const MmrRegistersData& mmr_register_data_event, const std::string& offset_tabs)
+{
+    std::stringstream ret;
+    ret << offset_tabs << "Version: " << mmr_register_data_event.version << std::endl;
+    ret << offset_tabs << "GPU ID: " << mmr_register_data_event.gpuId << std::endl;
+    ret << offset_tabs << "Number of registers: " << mmr_register_data_event.numRegisters << std::endl;
+    for (size_t reg_info_idx = 0; reg_info_idx < mmr_register_data_event.numRegisters; ++reg_info_idx)
+    {
+        ret << offset_tabs << "Mmr Register info " << reg_info_idx << ":" << std::endl;
+        ret << offset_tabs << offset_tabs << "Offset: 0x" << std::hex << mmr_register_data_event.registerInfos[reg_info_idx].offset << std::dec << std::endl;
+        ret << offset_tabs << offset_tabs << "Data  : 0x" << std::hex << mmr_register_data_event.registerInfos[reg_info_idx].data << std::dec << std::endl;
+    }
+
+    return ret.str();
+}
+
+std::string RgdSerializer::EventWaveRegisterDataToString(const WaveRegistersData& wave_register_data_event, const std::string& offset_tabs)
+{
+    std::stringstream ret;
+    ret << offset_tabs << "Version: " << wave_register_data_event.version << std::endl;
+    ret << offset_tabs << "Shader ID: 0x" << std::hex << wave_register_data_event.shaderId << std::dec << std::endl;
+    ret << offset_tabs << "Number of registers: " << wave_register_data_event.numRegisters << std::endl;
+    for (size_t reg_info_idx = 0; reg_info_idx < wave_register_data_event.numRegisters; ++reg_info_idx)
+    {
+        ret << offset_tabs << "Wave Register info " << reg_info_idx << ":" << std::endl;
+        ret << offset_tabs << offset_tabs << "Offset: 0x" << std::hex << wave_register_data_event.registerInfos[reg_info_idx].offset << std::dec << std::endl;
+        ret << offset_tabs << offset_tabs << "Data  : 0x" << std::hex << wave_register_data_event.registerInfos[reg_info_idx].data << std::dec << std::endl;
+    }
+
+    return ret.str();
+
+}
+
+std::string RgdSerializer::EventSeInfoToString(const SeInfo& se_info_event, const std::string& offset_tabs)
+{
+    std::stringstream ret;
+    ret << offset_tabs << "Version: " << se_info_event.version << std::endl;
+    ret << offset_tabs << "GPU ID: " << se_info_event.gpuId << std::endl;
+    ret << offset_tabs << "Number of SE registers: " << se_info_event.numSe << std::endl;
+    for (size_t reg_info_idx = 0; reg_info_idx < se_info_event.numSe; ++reg_info_idx)
+    {
+        ret << offset_tabs << "SE Register info " << reg_info_idx << ":" << std::endl;
+        ret << offset_tabs << offset_tabs << "Version: " << se_info_event.seRegsInfos[reg_info_idx].version << std::endl;
+        ret << offset_tabs << offset_tabs << "spiDebugBusy      : 0x" << std::hex << se_info_event.seRegsInfos[reg_info_idx].spiDebugBusy << std::dec << std::endl;
+        ret << offset_tabs << offset_tabs << "sqDebugStsGlobal  : 0x" << std::hex << se_info_event.seRegsInfos[reg_info_idx].sqDebugStsGlobal << std::dec
+            << std::endl;
+        ret << offset_tabs << offset_tabs << "sqDebugStsGlobal2 : 0x" << std::hex << se_info_event.seRegsInfos[reg_info_idx].sqDebugStsGlobal2 << std::dec
+            << std::endl;
+    }
+
+    return ret.str();
+}
+
 static std::string SerializeRgdEventOccurrenceUmd(const RgdEventOccurrence& curr_event)
 {
     // Serialize the event based on its type.
@@ -518,6 +611,30 @@ static std::string SerializeRgdEventOccurrenceKmd(const RgdEventOccurrence& curr
         txt << RgdSerializer::EventVmPageFaultToString(page_fault_event, "\t") << std::endl;
     }
     break;
+    case uint8_t(KmdEventId::RgdEventShaderWaves):
+    {
+        const ShaderWaves& shader_waves_event = static_cast<const ShaderWaves&>(rgd_event);
+        txt << RgdSerializer::EventShaderWaveToString(shader_waves_event, "\t") << std::endl;
+    }
+    break;
+    case uint8_t(KmdEventId::RgdEventMmrRegisters):
+    {
+        const MmrRegistersData& mmr_register_data_event = static_cast<const MmrRegistersData&>(rgd_event);
+        txt << RgdSerializer::EventMmrRegisterDataToString(mmr_register_data_event, "\t") << std::endl;
+    }
+    break;
+    case uint8_t(KmdEventId::RgdEventSeInfo):
+    {
+        const SeInfo& se_info_event = static_cast<const SeInfo&>(rgd_event);
+        txt << RgdSerializer::EventSeInfoToString(se_info_event, "\t") << std::endl;
+    }
+    break;
+    case uint8_t(KmdEventId::RgdEventWaveRegisters):
+    {
+        const WaveRegistersData& wave_register_data_event = static_cast<const WaveRegistersData&>(rgd_event);
+        txt << RgdSerializer::EventWaveRegisterDataToString(wave_register_data_event, "\t") << std::endl;
+    }
+    break;
     default:
         // Notify in case there is an unknown event type.
         assert(false);
@@ -556,5 +673,53 @@ std::string RgdSerializer::CrashAnalysisTimeInfoToString(const CrashAnalysisTime
     txt << "Time info:" << std::endl;
     txt << "\tStart time: " << time_info.start_time << std::endl;
     txt << "\tFrequency (Hz): " << time_info.frequency << std::endl;
+    return txt.str();
+}
+
+std::string RgdSerializer::CodeObjectLoadEventsToString(const std::vector<RgdCodeObjectLoadEvent>& code_object_load_events)
+{
+    std::stringstream txt;
+
+    for (uint32_t i = 0; i < code_object_load_events.size(); i++)
+    {
+        txt << "Event #" << (i + 1) << ":" << std::endl;
+        txt << "\tPCI ID: " << code_object_load_events[i].pci_id << std::endl;
+        txt << "\tLoader event type: "
+            << (code_object_load_events[i].loader_event_type == RgdCodeObjectLoadEventType::kCodeObjectLoadToGpuMemory ? "Code object load to GPU memory"
+                                                                                                                       : "Code object load from GPU memory")
+            << std::endl;
+        txt << "\tBase address: 0x" << std::hex << code_object_load_events[i].base_address << std::dec << std::endl;
+        txt << "\tCode object hash high: 0x" << std::hex << code_object_load_events[i].code_object_hash.high << std::dec << std::endl;
+        txt << "\tCode object hash low: 0x" << std::hex << code_object_load_events[i].code_object_hash.low << std::dec << std::endl;
+        txt << "\tTimestamp: " << code_object_load_events[i].timestamp << std::endl;
+    }
+    return txt.str();
+}
+
+std::string RgdSerializer::CodeObjectsToString(const std::map<Rgd128bitHash, CodeObject>& code_objects_map)
+{
+    std::stringstream txt;
+    size_t            seq_no = 1;
+    for (const std::pair<Rgd128bitHash, CodeObject>& code_object_item : code_objects_map)
+    {
+        txt << "Code object #" << seq_no++ << ":" << std::endl;
+        txt << "\tPCI ID: " << code_object_item.second.chunk_header.pci_id << std::endl;
+        txt << "\tCode object hash high: 0x" << std::hex << code_object_item.second.chunk_header.code_object_hash.high << std::dec << std::endl;
+        txt << "\tCode object hash low: 0x" << std::hex << code_object_item.second.chunk_header.code_object_hash.low << std::dec << std::endl;
+    }
+    return txt.str();
+}
+
+std::string RgdSerializer::PsoCorrelationsToString(const std::vector<RgdPsoCorrelation>& pso_correlations)
+{
+    std::stringstream txt;
+    for (uint32_t i = 0; i < pso_correlations.size(); i++)
+    {
+        txt << "Correlation #" << (i + 1) << ":" << std::endl;
+        txt << "\tAPI PSO hash: 0x" << std::hex << pso_correlations[i].api_pso_hash << std::dec << std::endl;
+        txt << "\tInternal pipeline hash high: 0x" << std::hex << pso_correlations[i].internal_pipeline_hash.high << std::dec << std::endl;
+        txt << "\tInternal pipeline hash low: 0x" << std::hex << pso_correlations[i].internal_pipeline_hash.low << std::dec << std::endl;
+        txt << "\tAPI level object name: " << pso_correlations[i].api_level_object_name << std::endl;
+    }
     return txt.str();
 }

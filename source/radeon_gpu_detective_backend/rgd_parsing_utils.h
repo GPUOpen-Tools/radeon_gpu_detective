@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  utilities for parsing raw data.
@@ -50,9 +50,29 @@ public:
     // Parse a 'DriverOverrides' chunk from the given chunk file.
     static bool ParseDriverOverridesChunk(rdf::ChunkFile& chunk_file, const char* chunk_identifier, nlohmann::json& driver_experiments_json);
 
+    // Parse a 'CodeObject' chunk from the given chunk file.
+    static bool ParseCodeObjectChunk(rdf::ChunkFile& chunk_file, const char* chunk_identifier, std::map<Rgd128bitHash, CodeObject>& code_objects_map);
+
+    // Parse a 'COLoadEvent' chunk from the given chunk file.
+    static bool ParseCodeObjectLoadEventChunk(rdf::ChunkFile&                      chunk_file,
+                                              const char*                          chunk_identifier,
+                                              std::vector<RgdCodeObjectLoadEvent>& code_object_loader_events);
+
+    // Parse a 'PsoCorrelation' chunk from the given chunk file.
+    static bool PsoCorrelationChunk(rdf::ChunkFile& chunk_file, const char* chunk_identifier, std::vector<RgdPsoCorrelation>& pso_correlations);
+
+    // Get the crash type - page fault or hang.
+    static bool GetIsPageFault();
+
 private:
     RgdParsingUtils() = delete;
     ~RgdParsingUtils() = delete;
+
+    // Set the crash type - page fault or hang.
+    static void SetIsPageFault(bool is_page_fault);
+
+    // Is the crash type a page fault or a hang?
+    static bool is_page_fault_;
 };
 
 #endif // RADEON_GPU_DETECTIVE_SOURCE_RGD_PARSING_UTILS_H_

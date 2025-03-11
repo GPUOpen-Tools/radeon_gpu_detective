@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  serializer to JSON format.
@@ -179,10 +179,10 @@ void RgdSerializerJson::SetSystemInfoData(const Config& user_config, const syste
             json_[kJsonElemSystemInfo]["gpu"].push_back({
                 {"name", system_info.gpus[g].name },
                 {"device_id", system_info.gpus[g].asic.id_info.device },
-                {"device_revision_id", system_info.gpus[g].asic.id_info.e_rev },
+                {"e_rev", system_info.gpus[g].asic.id_info.e_rev },
                 {"device_family_id", system_info.gpus[g].asic.id_info.family },
                 {"device_graphics_engine_id", system_info.gpus[g].asic.id_info.gfx_engine },
-                {"device_pci_revision_id", system_info.gpus[g].asic.id_info.revision },
+                {"revision", system_info.gpus[g].asic.id_info.revision },
                 {"big_sw_version", { {"major",system_info.gpus[g].big_sw.major }, {"minor", system_info.gpus[g].big_sw.minor}, {"misc", system_info.gpus[g].big_sw.misc} }},
                 {"memory", {
                     {"type", system_info.gpus[g].memory.type },
@@ -459,14 +459,32 @@ void RgdSerializerJson::SetDriverExperimentsInfoData(const nlohmann::json& drive
             RgdUtils::PrintMessage(kErrorMsgInvalidDriverOverridesJson, RgdMessageType::kError, true);
         }
     }
-    catch (nlohmann::json::exception e)
+    catch (nlohmann::json::exception& e)
     {
         assert(false);
         std::stringstream error_msg;
         error_msg << kErrorMsgFailedToParseDriverExperimentsInfo << " (" << e.what() << ")";
         RgdUtils::PrintMessage(error_msg.str().c_str(), RgdMessageType::kError, true);
+    } 
+}
+
+void RgdSerializerJson::SetShaderInfo(const Config& user_config, RgdEnhancedCrashInfoSerializer& enhanced_crash_info_serializer)
+{
+    RgdUtils::PrintMessage("generating JSON representation of the in-flight shader information...", RgdMessageType::kInfo, user_config.is_verbose);
+    nlohmann::json shader_info_json;
+    bool is_ok = enhanced_crash_info_serializer.GetInFlightShaderInfoJson(user_config, shader_info_json);
+
+    if (is_ok)
+    {
+        json_[kJsonElemShaderInfo] = shader_info_json[kJsonElemShaderInfo];
+        assert(!json_[kJsonElemShaderInfo].empty());
+        RgdUtils::PrintMessage(
+            "JSON representation of the in-flight shader information generated successfully.", RgdMessageType::kInfo, user_config.is_verbose);
     }
-    
+    else
+    {
+        RgdUtils::PrintMessage(kStrNoInFlightShaderInfo, RgdMessageType::kWarning, user_config.is_verbose);
+    }
 }
 
 bool RgdSerializerJson::SaveToFile(const Config& user_config) const

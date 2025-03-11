@@ -1,5 +1,5 @@
 #=============================================================================
-# Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+# Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
 #  @author AMD Developer Tools Team
 #  @file
 #  @brief  RGD Backend CMakeLists file.
@@ -16,6 +16,10 @@ include_directories("${PROJECT_SOURCE_DIR}/../../external/rmv/source/parser/")
 include_directories("${PROJECT_SOURCE_DIR}/../../external/rmv/source/backend/")
 include_directories("${PROJECT_SOURCE_DIR}/../../external/third_party/")
 include_directories("${PROJECT_SOURCE_DIR}/../../external/rdf/rdf/inc/")
+include_directories("${PROJECT_SOURCE_DIR}/../../external/comgr_package/comgr_utils/")
+include_directories("${PROJECT_SOURCE_DIR}/../../external/comgr_package/comgr/include/")
+include_directories(AFTER ${AMDGPU_DIS_INCLUDE_DIR} )
+include_directories(AFTER ${AMD_COMGR_INCLUDE_DIR} )
 
 set(CMAKE_CXX_STANDARD 17)
 

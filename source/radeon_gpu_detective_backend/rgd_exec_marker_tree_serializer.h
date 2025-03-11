@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  execution marker tree serialization.
@@ -23,10 +23,20 @@
 // Node in the execution marker tree.
 struct MarkerNode
 {
-    MarkerNode(uint64_t begin_timestamp, uint32_t value, const std::string& str) :
-        timestamp_begin_(begin_timestamp), marker_str(str), marker_value(value), marker_info{} {}
+    MarkerNode(uint64_t begin_timestamp, uint32_t value, uint64_t api_pso_hash, bool is_shader_in_flight, const std::string& str)
+        : timestamp_begin_(begin_timestamp)
+        , marker_str(str)
+        , marker_value(value)
+        , api_pso_hash(api_pso_hash)
+        , is_shader_in_flight(is_shader_in_flight)
+        , marker_info{}
+    {
+    }
     uint64_t timestamp_begin_ = 0;
     uint64_t timestamp_end_ = 0;
+
+    // Pipeline bind API PSO hash.
+    uint64_t api_pso_hash = 0;
 
     // User string.
     std::string marker_str;
@@ -54,6 +64,12 @@ struct MarkerNode
     // For more than one consecutive identical nodes, Marker Summary List in text output includes path once for this node appended with repeat count.
     // This will be set to false for all identical occurrences of the nodes after the first node (nodes 2 to n) and the nodes 2 to n are excluded from the marker summary list in text output.
     bool is_include_node_in_text_summary_list = true;
+
+    // Set to true if this marker is associated with a crashing shader.
+    bool is_shader_in_flight                 = false;
+
+    // Crashing shader information for this marker. Updated only when the marker is associated with a crashing shader.
+    RgdCrashingShaderInfo crashing_shader_info;
 };
 
 // Builds a tree representation of the execution markers for a single command buffer.
@@ -68,7 +84,12 @@ public:
         is_file_visualization_(!user_config.output_file_txt.empty()) {}
 
     // Insert a Begin marker into the tree.
-    void PushMarkerBegin(uint64_t timestamp, uint32_t marker_value, const std::string& str);
+    void PushMarkerBegin(uint64_t              timestamp,
+                         uint32_t              marker_value,
+                         uint64_t              pipeline_api_pso_hash,
+                         bool                  is_shader_in_flight,
+                         const std::string&    str,
+                         RgdCrashingShaderInfo& rgd_crashing_shader_info);
 
     // Update Begin marker info.
     void UpdateMarkerInfo(uint32_t marker_value, const uint8_t info[]);

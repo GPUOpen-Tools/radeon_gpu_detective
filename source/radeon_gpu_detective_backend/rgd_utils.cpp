@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  general utilities.
@@ -241,5 +241,37 @@ std::string RgdUtils::GetApiString(TraceApiType api_type)
         break;
     }
 
+    return ret_txt.str();
+}
+
+std::string RgdUtils::GetHangTypeString(HangType hang_type)
+{
+    std::stringstream ret_txt;
+    switch (hang_type)
+    {
+    case pageFault:
+        ret_txt << "Page fault";
+        break;
+    case nonPageFault:
+        ret_txt << "Non-page fault";
+        break;
+    case unknown:
+        ret_txt << "Unknown";
+        break;
+    default:
+        // Should not reach here.
+        assert(false);
+        ret_txt << "Invalid";
+        break;
+    }
+
+    return ret_txt.str();
+}
+
+std::string RgdUtils::GetAlphaNumericId(std::string id_prefix, uint64_t id)
+{
+    std::stringstream ret_txt;
+    assert(!id_prefix.empty());
+    ret_txt << id_prefix << id;
     return ret_txt.str();
 }

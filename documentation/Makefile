@@ -1,3 +1,5 @@
+# Copyright © Advanced Micro Devices, Inc. All rights reserved.
+#
 # Minimal makefile for Sphinx documentation
 #
 

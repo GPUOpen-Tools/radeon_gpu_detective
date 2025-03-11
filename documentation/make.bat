@@ -1,3 +1,5 @@
+REM Copyright © Advanced Micro Devices, Inc. All rights reserved.
+
 @ECHO OFF
 
 pushd %~dp0

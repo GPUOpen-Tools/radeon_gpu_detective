@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  general utilities.
@@ -72,6 +72,12 @@ public:
 
     // Returns the API string.
     static std::string GetApiString(TraceApiType api_type);
+
+    // Returns the hang type string.
+    static std::string GetHangTypeString(HangType hang_type);
+
+    // Returns the alphanumeric string id bu appending the input string prefix and id.
+    static std::string GetAlphaNumericId(std::string id_prefix, uint64_t id);
 
 private:
     RgdUtils() = delete;

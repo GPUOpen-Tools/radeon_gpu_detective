@@ -1,5 +1,5 @@
 ﻿//=============================================================================
-// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  execution marker tree serialization.
@@ -71,13 +71,24 @@ static std::string GenerateBarrierString()
 
 // *** INTERNALLY-LINKED AUXILIARY FUNCTIONS - END ***
 
-void ExecMarkerTreeSerializer::PushMarkerBegin(uint64_t timestamp, uint32_t marker_value, const std::string& str)
+void ExecMarkerTreeSerializer::PushMarkerBegin(uint64_t                            timestamp,
+                                               uint32_t                            marker_value,
+                                               uint64_t pipeline_api_pso_hash,
+                                               bool is_shader_in_flight,
+                                               const std::string&                  str, 
+                                               RgdCrashingShaderInfo& rgd_crashing_shader_info)
 {
 #ifdef _DEBUG
     UpdateAndValidateTimestamp(timestamp);
 #endif
 
-    MarkerNode new_marker_node(timestamp, marker_value, str);
+    MarkerNode new_marker_node(timestamp, marker_value, pipeline_api_pso_hash, is_shader_in_flight, str);
+
+    if (is_shader_in_flight)
+    {
+        new_marker_node.crashing_shader_info.crashing_shader_ids = std::move(rgd_crashing_shader_info.crashing_shader_ids);
+        new_marker_node.crashing_shader_info.api_stages = std::move(rgd_crashing_shader_info.api_stages);
+    }
     if (current_stack_.empty())
     {
         marker_nodes_.push_back(std::move(new_marker_node));
@@ -257,7 +268,7 @@ std::string ExecMarkerTreeSerializer::TreeToString(const Config& user_config) co
     }
 
     // Dummy parent/root node to hold top level markers list.
-    MarkerNode dummy_root(0,0,kExecTreeDummyRootString);
+    MarkerNode dummy_root(0, 0, 0, 0, kExecTreeDummyRootString);
 
     dummy_root.child_markers = marker_nodes_;
 
@@ -290,6 +301,20 @@ void ExecMarkerTreeSerializer::TreeNodeToJson(const MarkerNode& node, nlohmann::
     {
         marker_node_json[KJsonElemName] = node.marker_str;
     }
+
+    // Flag for the barrier marker. Enhanced crash info - shader in flight correlation info is not printed for barrier markers.
+    bool is_barrier_marker = false;
+
+    if (kBarrierMarkerStrings.find(node.marker_str) != kBarrierMarkerStrings.end())
+    {
+        is_barrier_marker = true;
+    }
+
+    // Flag for the application marker. Enhanced crash info - shader in flight correlation info is not printed for application markers.
+    // As pipeline bind events are correctly correlated with the driver markers only.
+    bool is_application_marker =
+        ((node.marker_value & kMarkerSrcMask) >> (kUint32Bits - kMarkerSrcBitLen)) == (uint32_t)CrashAnalysisExecutionMarkerSource::Application;
+
 
     uint8_t* marker_info = const_cast<uint8_t*>(node.marker_info);
     ExecutionMarkerInfoHeader* exec_marker_info_header = reinterpret_cast<ExecutionMarkerInfoHeader*>(marker_info);
@@ -360,6 +385,22 @@ void ExecMarkerTreeSerializer::TreeNodeToJson(const MarkerNode& node, nlohmann::
         default:
             // Should not reach here.
             assert(false);
+        }
+    }
+
+    // Add in-flight shader information.
+    if (node.is_shader_in_flight && status == MarkerExecutionStatus::kInProgress && !is_barrier_marker && !is_application_marker)
+    {
+        marker_node_json["has_correlated_running_wave"] = true;
+        marker_node_json[kJsonElemShaderInfo][kJsonElemApiPsoHash] = node.api_pso_hash;
+        marker_node_json[kJsonElemShaderInfo][kJsonElemShaders]    = nlohmann::json::array();
+
+        assert(node.crashing_shader_info.api_stages.size() == node.crashing_shader_info.crashing_shader_ids.size());
+        const size_t min_of_shader_ids_stages = std::min(node.crashing_shader_info.api_stages.size(), node.crashing_shader_info.crashing_shader_ids.size());
+        for (size_t i = 0; i < min_of_shader_ids_stages; ++i)
+        {
+            marker_node_json[kJsonElemShaderInfo][kJsonElemShaders].push_back(
+                {{kJsonElemShaderInfoId, node.crashing_shader_info.crashing_shader_ids[i]}, {kJsonElemApiStage, node.crashing_shader_info.api_stages[i]}});
         }
     }
 
@@ -458,6 +499,8 @@ std::string ExecMarkerTreeSerializer::TreeNodeToString(std::vector<bool> is_last
     const size_t kMaxNodesOfSameStatusToPrint = 33;
     const size_t kMinNumberOfNodesToSquash = 9;
 
+    const char* kMarkerNodeHasACorrelatedRunningWave = "<-- has a correlated running wave";
+
     std::stringstream txt;
     const size_t kIndentationDepth = is_last_on_level.size();
 
@@ -490,6 +533,20 @@ std::string ExecMarkerTreeSerializer::TreeNodeToString(std::vector<bool> is_last
             txt << (is_file_visualization_ ? " \xe2\x94\x9c\xe2\x94\x80" : " |--");
         }
     }
+
+    // Flag for the barrier marker. Enhanced crash info - shader in flight correlation info is not printed for barrier markers.
+    bool is_barrier_marker = false;
+
+    if (kBarrierMarkerStrings.find(item.marker_str) != kBarrierMarkerStrings.end())
+    {
+        is_barrier_marker = true;
+    }
+
+    // Flag for the application marker. Enhanced crash info - shader in flight correlation info is not printed for application markers.
+    // As pipeline bind events are correctly correlated with the driver markers only.
+    bool is_application_marker =
+        ((item.marker_value & kMarkerSrcMask) >> (kUint32Bits - kMarkerSrcBitLen)) == (uint32_t)CrashAnalysisExecutionMarkerSource::Application;
+
     MarkerExecutionStatus status = MarkerExecutionStatus::kInProgress;
 
     // Do not print if this is an internally added "dummy Exec marker tree root node".
@@ -503,7 +560,14 @@ std::string ExecMarkerTreeSerializer::TreeNodeToString(std::vector<bool> is_last
             txt << "[ ] ";
             break;
         case MarkerExecutionStatus::kInProgress:
-            txt << "[>] ";
+            if (item.is_shader_in_flight && !is_barrier_marker && !is_application_marker)
+            {
+                txt << "[#] ";
+            }
+            else
+            {
+                txt << "[>] ";
+            }
             break;
         case MarkerExecutionStatus::kFinished:
             txt << "[X] ";
@@ -514,11 +578,11 @@ std::string ExecMarkerTreeSerializer::TreeNodeToString(std::vector<bool> is_last
 
         // Generate the string.
         // Wrap the marker string in double quotes if source is application.
-        if (((item.marker_value & kMarkerSrcMask) >> (kUint32Bits - kMarkerSrcBitLen)) == (uint32_t)CrashAnalysisExecutionMarkerSource::Application)
+        if (is_application_marker)
         {
             txt << "\"" << item.marker_str << "\"";
         }
-        else if (kBarrierMarkerStrings.find(item.marker_str) != kBarrierMarkerStrings.end())
+        else if (is_barrier_marker)
         {
             // Following marker strings from driver are replaced with standard string "Barrier" in Execution Marker Tree output.
             // 'Release', 'Acquire', 'ReleaseEvent', 'AcquireEvent' and 'ReleaseThenAcquire'.
@@ -579,6 +643,32 @@ std::string ExecMarkerTreeSerializer::TreeNodeToString(std::vector<bool> is_last
                 // Should not reach here.
                 assert(false);
             }
+        }
+
+        if (item.is_shader_in_flight && status == MarkerExecutionStatus::kInProgress && !is_barrier_marker && !is_application_marker)
+        {
+            txt << " " << kMarkerNodeHasACorrelatedRunningWave << " <SHADER INFO section IDs: {";
+            const bool is_multiple_ids = item.crashing_shader_info.crashing_shader_ids.size() > 1;
+            for (size_t i = 0; i < item.crashing_shader_info.crashing_shader_ids.size(); ++i)
+            {
+                txt << item.crashing_shader_info.crashing_shader_ids[i];
+                if (is_multiple_ids && i + 1 < item.crashing_shader_info.crashing_shader_ids.size())
+                {
+                    txt << ", ";
+                }
+            }
+            txt << "}, API PSO hash = 0x" << std::hex << item.api_pso_hash << std::dec << ", API stages: {";
+            assert(item.crashing_shader_info.api_stages.size() > 0);
+            const bool is_multiple_stages = item.crashing_shader_info.api_stages.size() > 1;
+            for (size_t i = 0; i < item.crashing_shader_info.crashing_shader_ids.size(); ++i)
+            {
+                txt << item.crashing_shader_info.api_stages[i];
+                if (is_multiple_stages && i + 1 < item.crashing_shader_info.api_stages.size())
+                {
+                    txt << ", ";
+                }
+            }
+            txt << "}>";
         }
 
         txt << std::endl;

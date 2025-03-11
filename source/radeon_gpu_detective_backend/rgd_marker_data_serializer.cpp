@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  execution marker serialization.
@@ -15,8 +15,92 @@
 #include <sstream>
 #include <cassert>
 #include <memory>
+#include <regex>
 
 // *** INTERNALLY-LINKED AUXILIARY FUNCTIONS - BEGIN ***
+
+// Function to calculate the display width of a string, considering special characters.
+// Used for aligning the Shader info in the execution marker tree. The execution marker tree string includes the special characters.
+static size_t CalculateDisplayWidth(const std::string& str)
+{
+    size_t      width = 0;
+    std::locale loc;
+    for (size_t i = 0; i < str.length(); ++i)
+    {
+        // UTF-8 multi-byte character.
+        if ((unsigned char)str[i] >= 0xC0)
+        {
+            if ((unsigned char)str[i] < 0xE0)
+            {
+                // 2-byte character.
+                i += 1;
+            }
+            else if ((unsigned char)str[i] < 0xF0)
+            {
+                // 3-byte character.
+                i += 2;
+            }
+            else
+            {
+                // 4-byte character.
+                i += 3;
+            }
+            
+            // Assume each multi-byte character takes 1 display width
+            width += 1;
+        }
+        else
+        {
+            // Count printable characters.
+            width += std::isprint(str[i], loc) ? 1 : 0;
+        }
+    }
+    return width;
+}
+
+// Aligns the shader info added in the execution marker tree.
+static std::string AlignShaderInfoinExecMarkerTree(const std::string& input_tree)
+{
+    std::istringstream       stream(input_tree);
+    std::string              line;
+    std::vector<std::string> lines;
+    size_t                   max_length = 0;
+
+    // Split lines and find the maximum length of the left part
+    while (std::getline(stream, line))
+    {
+        size_t pos = line.find("<--");
+        if (pos != std::string::npos)
+        {
+            max_length = std::max(max_length, CalculateDisplayWidth(line.substr(0, pos)));
+        }
+        else
+        {
+            max_length = std::max(max_length, CalculateDisplayWidth(line));
+        }
+        lines.push_back(line);
+    }
+
+    // Reconstruct the lines with aligned comments
+    std::ostringstream result;
+    for (const auto& l : lines)
+    {
+        size_t pos = l.find("<--");
+        if (pos != std::string::npos)
+        {
+            size_t display_width = CalculateDisplayWidth(l.substr(0, pos));
+            result << l.substr(0, pos);
+            result << std::string(max_length - display_width, ' ');
+            result << l.substr(pos) << "\n";
+        }
+        else
+        {
+            result << l << "\n";
+        }
+    }
+
+    return result.str();
+}
 
 // Converts started/finished status flags to the relevant Execution status.
 static MarkerExecutionStatus MarkerStatusFlagsToExecutionStatus(MarkerExecutionStatusFlags flags)
@@ -75,6 +159,9 @@ bool ExecMarkerDataSerializer::GenerateExecutionMarkerTree(const Config& user_co
     }
 
     marker_tree = txt_tree.str();
+
+    // Post process the execution marker tree output to align the shader info in same column.
+    marker_tree = AlignShaderInfoinExecMarkerTree(marker_tree);
     if (marker_tree.empty() && ret)
     {
         marker_tree = "INFO: execution marker tree is empty since no command buffers were in flight during the crash.";
@@ -327,6 +414,10 @@ bool ExecMarkerDataSerializer::BuildCmdBufferExecutionMarkerTreeNodes(const Conf
         const RgdEventOccurrence& curr_event_occurrence = umd_crash_data.events[i];
         const RgdEvent& curr_event = *curr_event_occurrence.rgd_event;
         UmdEventId event_id = static_cast<UmdEventId>(curr_event_occurrence.rgd_event->header.eventId);
+
+        uint64_t pipeline_api_pso_hash = 0;
+        bool     is_shader_in_flight   = false;
+
         if (event_id == UmdEventId::RgdEventCrashDebugNopData)
         {
             // Retrieve the execution markers for the relevant command buffer ID.
@@ -372,7 +463,23 @@ bool ExecMarkerDataSerializer::BuildCmdBufferExecutionMarkerTreeNodes(const Conf
                                     ? std::string(reinterpret_cast<const char*>(marker_begin.markerName), marker_begin.markerStringSize)
                                     : std::string(kStrNotAvailable);
 
-                            command_buffer_exec_tree_[debug_nop_event.cmdBufferId]->PushMarkerBegin(curr_marker_event.event_time, marker_value, marker_name);
+                            RgdCrashingShaderInfo crashing_shader_info;
+                            if (is_shader_in_flight)
+                            {
+                                // If shader is in flight, update the Marker Node with related shader info.
+                                assert(in_flight_shader_api_pso_hashes_to_shader_info_.find(pipeline_api_pso_hash) !=
+                                       in_flight_shader_api_pso_hashes_to_shader_info_.end());
+                                if (in_flight_shader_api_pso_hashes_to_shader_info_.find(pipeline_api_pso_hash) !=
+                                    in_flight_shader_api_pso_hashes_to_shader_info_.end())
+                                {
+                                    crashing_shader_info.crashing_shader_ids =
+                                        in_flight_shader_api_pso_hashes_to_shader_info_[pipeline_api_pso_hash].crashing_shader_ids;
+                                    crashing_shader_info.api_stages =
+                                        in_flight_shader_api_pso_hashes_to_shader_info_[pipeline_api_pso_hash].api_stages;
+                                }
+                            }
+                            command_buffer_exec_tree_[debug_nop_event.cmdBufferId]->PushMarkerBegin(
+                                curr_marker_event.event_time, marker_value, pipeline_api_pso_hash, is_shader_in_flight, marker_name, crashing_shader_info);
                         }
                         else if (marker_event_id == UmdEventId::RgdEventExecutionMarkerInfo)
                         {
@@ -405,6 +512,12 @@ bool ExecMarkerDataSerializer::BuildCmdBufferExecutionMarkerTreeNodes(const Conf
                                 // If info provided with BarrierEnd is needed in future, update the MarkerNode struct to hold additional marker_info[64] from the BarrierEnd event.
                                 command_buffer_exec_tree_[debug_nop_event.cmdBufferId]->UpdateMarkerInfo(marker_value, exec_marker_info_event.markerInfo);
                             }
+                            else if (exec_marker_info_header->infoType == ExecutionMarkerInfoType::PipelineBind)
+                            {
+                                PipelineInfo* pipeline_info = reinterpret_cast<PipelineInfo*>(marker_info + sizeof(ExecutionMarkerInfoHeader));
+                                pipeline_api_pso_hash       = pipeline_info->apiPsoHash;
+                                is_shader_in_flight         = IsShaderInFlight(pipeline_api_pso_hash);
+                            }
                         }
                         else if (marker_event_id == UmdEventId::RgdEventExecutionMarkerEnd)
                         {
@@ -436,4 +549,9 @@ bool ExecMarkerDataSerializer::BuildCmdBufferExecutionMarkerTreeNodes(const Conf
     }
 
     return ret;
+}
+
+bool ExecMarkerDataSerializer::IsShaderInFlight(uint64_t api_pso_hash)
+{
+    return in_flight_shader_api_pso_hashes_to_shader_info_.find(api_pso_hash) != in_flight_shader_api_pso_hashes_to_shader_info_.end();
 }

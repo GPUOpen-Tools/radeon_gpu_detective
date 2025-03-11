@@ -1,5 +1,5 @@
 #=============================================================================
-# Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+# Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
 #  @author AMD Developer Tools Team
 #  @file
 #  @brief  RGD CLI CMakeLists file.
@@ -51,10 +51,37 @@ ENDIF(WIN32)
 set_target_properties(radeon_gpu_detective_cli PROPERTIES OUTPUT_NAME rgd)
 
 # Linker.
-target_link_libraries(radeon_gpu_detective_cli rgd_backend rdf RmvBackend RmvParser system_info)
+target_link_libraries(radeon_gpu_detective_cli rgd_backend rdf RmvBackend RmvParser system_info ComgrUtils ${CMAKE_DL_LIBS})
 
 # Warning level.
 if(MSVC)
   target_compile_options(radeon_gpu_detective_cli PRIVATE /W4)
 endif()
 
+# Setup the post-build script.
+# List of all dynamically loaded libraries that need to be copied into the output
+set( PLUGINS
+  ${AMD_COMGR_SHAREDLIB}
+  ${AMDGPU_DIS_SHAREDLIB}
+)
+
+# Copy all plugins (aka dynamically loaded shared libraries) into the appropriate output directory.
+#
+IF (WIN32)
+    # For WIN32 shared libraries live in the same directory as the executable
+    set(PLUGIN_DST $<TARGET_FILE_DIR:${PROJECT_NAME}>)
+ELSEIF (UNIX)
+    # For Unix, shared libraries are copied into a /lib subdirectory
+    set(PLUGIN_DST $<TARGET_FILE_DIR:${PROJECT_NAME}>/lib/)
+ENDIF()
+
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${PLUGIN_DST}
+)
+
+FOREACH (PLUGIN ${PLUGINS})
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "copying ${PLUGIN} to ${PLUGIN_DST}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${PLUGIN} ${PLUGIN_DST}
+        )
+ENDFOREACH()

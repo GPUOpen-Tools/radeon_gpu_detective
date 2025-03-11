@@ -1,5 +1,5 @@
 #! python3
-# Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+# Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
 #
 # Definitions for project external dependencies to be fetched or updated before build.
 #
@@ -27,8 +27,22 @@ git_mapping = {
     github_root     + "catchorg/Catch2"                                 : ["../external/third_party/catch2",  "v2.13.6"]
 }
 
+####### URL Dependencies #######
+
+if sys.platform == "win32":
+    comgr_package = "https://github.com/GPUOpen-Tools/comgr_utils/releases/download/rdts-2025-03-11/COMGR-Package-Windows-197.zip"
+elif sys.platform.startswith('linux') == True:
+    comgr_package = "https://github.com/GPUOpen-Tools/comgr_utils/releases/download/rdts-2025-03-11/COMGR-Package-Linux-197.tgz"
+else:
+    log_print("Unsupported Platform")
+    sys.exit(-1)
+
 # Downloads required for Windows builds.
-url_mapping_win = {}
+url_mapping_win = {
+    comgr_package :  "../external/comgr_package",
+}
 
 # Downloads required for Linux builds.
-url_mapping_linux = {}
+url_mapping_linux = {
+    comgr_package :  "../external/comgr_package",
+}

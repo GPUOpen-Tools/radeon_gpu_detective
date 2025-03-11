@@ -1,0 +1,2 @@
+amd_gpu_dis/Lib/VS2022/x64/amdgpu_dis.dll filter=lfs diff=lfs merge=lfs -text
+amd_gpu_dis/Lib/Linux/x64/libamdgpu_dis.so filter=lfs diff=lfs merge=lfs -text

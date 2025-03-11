@@ -11,6 +11,7 @@ external/update_check_api
 external/system_info_utils
 external/rdf
 external/third_party
+external/comgr_package
 Buildinfo.properties
 rgd_version_info.h
 documentation/build

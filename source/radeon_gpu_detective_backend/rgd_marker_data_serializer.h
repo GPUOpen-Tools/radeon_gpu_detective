@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  execution marker serialization.
@@ -21,7 +21,10 @@ static const char* kJsonElemCmdBufferIdElement = "cmd_buffer_id";
 class ExecMarkerDataSerializer
 {
 public:
-    ExecMarkerDataSerializer() = default;
+    ExecMarkerDataSerializer(std::unordered_map<uint64_t, RgdCrashingShaderInfo> in_flight_shader_api_pso_hashes_to_shader_info_)
+        : in_flight_shader_api_pso_hashes_to_shader_info_(std::move(in_flight_shader_api_pso_hashes_to_shader_info_))
+    {
+    }
     ~ExecMarkerDataSerializer() = default;
 
     // Generate a textual tree that represents the status of the execution markers.
@@ -48,6 +51,9 @@ public:
         const std::unordered_map <uint64_t, std::vector<size_t>>& cmd_buffer_events,
         nlohmann::json& all_cmd_buffers_marker_summary_json);
 
+    // Returns true if any of the shaders that are associated with the pipeline that is represented by the given API PSO hash is in flight.
+    bool IsShaderInFlight(uint64_t api_pso_hash);
+
 private:
 
     // Build command buffer marker status map.
@@ -66,6 +72,9 @@ private:
 
     // Map to store command buffer info.
     std::unordered_map<uint64_t, CmdBufferInfo> cmd_buffer_info_map_;
+
+    // For each in-flight shader, this is a mapping between the shader's pipeline's PSO hash to the pipeline's shader information.
+    std::unordered_map<uint64_t, RgdCrashingShaderInfo> in_flight_shader_api_pso_hashes_to_shader_info_;
 };
 
 #endif // RADEON_GPU_DETECTIVE_MARKER_DATA_SERIALIZER_H_

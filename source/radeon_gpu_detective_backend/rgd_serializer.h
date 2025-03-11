@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  serializer different data elements.
@@ -45,6 +45,10 @@ public:
     static std::string EventExecMarkerEndToString(const CrashAnalysisExecutionMarkerEnd& exec_marker_event, const std::string& offset_tabs);
     static std::string EventDebugNopToString(const CrashDebugNopData& debug_nop_event, const std::string& offset_tabs);
     static std::string EventVmPageFaultToString(const VmPageFaultEvent& page_fault_event, const std::string& offset_tabs);
+    static std::string EventShaderWaveToString(const ShaderWaves& shader_wave_event, const std::string& offset_tabs);
+    static std::string EventMmrRegisterDataToString(const MmrRegistersData& mmr_register_data_event, const std::string& offset_tabs);
+    static std::string EventWaveRegisterDataToString(const WaveRegistersData& wave_register_data_event, const std::string& offset_tabs);
+    static std::string EventSeInfoToString(const SeInfo& se_info_event, const std::string& offset_tabs);
 
     // Serialize RGD Umd events in the given container into a string.
     static std::string SerializeUmdCrashEvents(const std::vector<RgdEventOccurrence>& umd_events);
@@ -54,6 +58,15 @@ public:
 
     // Serialize the crash analysis time info structure into a string.
     static std::string CrashAnalysisTimeInfoToString(const CrashAnalysisTimeInfo& time_info);
+
+    // Serialize the Code Object Load Events info.
+    static std::string CodeObjectLoadEventsToString(const std::vector<RgdCodeObjectLoadEvent>& code_object_load_events);
+
+    // Serialize the Code Object Database info.
+    static std::string CodeObjectsToString(const std::map<Rgd128bitHash, CodeObject>& code_objects_map);
+
+    // Serialize the PSO Correlations info.
+    static std::string PsoCorrelationsToString(const std::vector<RgdPsoCorrelation>& pso_correlations);
 
 private:
     RgdSerializer() = delete;

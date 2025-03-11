@@ -10,6 +10,7 @@
 
 // RDF.
 #include "rdf/rdf/inc/amdrdf.h"
+#include "rgd_hash.h"
 
 /// Generic event header for Rdf Chunks
 struct DDEventProviderHeader
@@ -112,7 +113,11 @@ enum class ExecutionMarkerInfoType : uint8_t
 /// struct with the same name.
 enum class KmdEventId : uint8_t
 {
-    RgdEventVmPageFault = DDCommonEventId::FirstEventIdForIndividualProvider,
+    RgdEventVmPageFault   = DDCommonEventId::FirstEventIdForIndividualProvider,
+    RgdEventShaderWaves   = DDCommonEventId::FirstEventIdForIndividualProvider + 1,
+    RgdEventSeInfo        = DDCommonEventId::FirstEventIdForIndividualProvider + 2,
+    RgdEventMmrRegisters  = DDCommonEventId::FirstEventIdForIndividualProvider + 3,
+    RgdEventWaveRegisters = DDCommonEventId::FirstEventIdForIndividualProvider + 4,
 };
 
 /// Header used in RGD events
@@ -250,6 +255,161 @@ struct VmPageFaultEvent : RgdEvent
     uint64_t faultVmAddress;
     uint16_t processNameLength;
     char     processName[64];
+};
+
+// offset and data of a single memory mapped register
+struct MmrRegisterInfo
+{
+    uint32_t offset;
+    uint32_t data;
+};
+
+// Note: Must exactly match KmdMmrRegistersEventData in KmdEventDefs.h
+struct MmrRegistersData : RgdEvent
+{
+    uint32_t version;
+
+    // GPU identifier for these register events
+    uint32_t gpuId;
+
+    // number of MMrRegisterInfo structures which follow
+    uint32_t numRegisters;
+
+    // array of MMrRegisterInfo
+    // actual array length is `numRegisters`
+    MmrRegisterInfo registerInfos[1];
+
+    static size_t CalculateStructureSize(uint32_t numRegisterInfoForCalculation)
+    {
+        // std::max wrapped in parenthesis to ensure use of std::max instead of
+        // Windows header 'max' macro
+        numRegisterInfoForCalculation = (std::max)(1U, numRegisterInfoForCalculation);
+        return sizeof(MmrRegistersData) + sizeof(MmrRegisterInfo) * (numRegisterInfoForCalculation - 1);
+    }
+};
+
+// Graphics Register Bus Manager status registers
+struct GrbmStatusSeRegs
+{
+    uint32_t version;
+    uint32_t grbmStatusSe0;
+    uint32_t grbmStatusSe1;
+    uint32_t grbmStatusSe2;
+    uint32_t grbmStatusSe3;
+    // SE4 and SE5 are NV31 specific, 2x does not have this
+    uint32_t grbmStatusSe4;
+    uint32_t grbmStatusSe5;
+};
+
+// Note: Must exactly match KmdWaveInfo in KmdEventDefs.h
+struct WaveInfo
+{
+    uint32_t version;
+
+    union
+    {
+        struct
+        {
+            unsigned int waveId : 5;
+            unsigned int : 3;
+            unsigned int simdId : 2;
+            unsigned int wgpId : 4;
+            unsigned int : 2;
+            unsigned int saId : 1;
+            unsigned int : 1;
+            unsigned int seId : 4;
+            unsigned int reserved : 10;
+        };
+        uint32_t shaderId;
+    };
+};
+
+// NOTE: HangType must match the Hangtype enum in kmdEventDefs.h
+enum HangType : uint32_t
+{
+    pageFault    = 0,
+    nonPageFault = 1,
+    unknown      = 2,
+};
+
+// Note: Must exactly match KmdShaderWavesEventData in kmdEventDefs.h
+struct ShaderWaves : RgdEvent
+{
+    // structure version
+    uint32_t version;
+
+    // GPU identifier for these register events
+    uint32_t gpuId;
+
+    HangType         typeOfHang;
+    GrbmStatusSeRegs grbmStatusSeRegs;
+
+    uint32_t numberOfHungWaves;
+    uint32_t numberOfActiveWaves;
+
+    // aray of hung waves followed by active waves
+    // KmdWaveInfo * [numberOfHungWaves]
+    // KmdWaveInfo * [numberOfActiveWaves]
+    WaveInfo waveInfos[1];
+
+    static size_t CalculateStructureSize(uint32_t numWaveInfoForCalculation)
+    {
+        // std::max wrapped in parenthesis to ensure use of std::max instead of
+        // Windows header 'max' macro
+        numWaveInfoForCalculation = (std::max)(1U, numWaveInfoForCalculation);
+        return sizeof(ShaderWaves) + sizeof(WaveInfo) * (numWaveInfoForCalculation - 1);
+    }
+};
+
+struct SeRegsInfo
+{
+    uint32_t version;
+    uint32_t spiDebugBusy;
+    uint32_t sqDebugStsGlobal;
+    uint32_t sqDebugStsGlobal2;
+};
+
+struct SeInfo : RgdEvent
+{
+    // structure version
+    uint32_t version;
+
+    // GPU identifier for these register events
+    uint32_t gpuId;
+
+    // number of SeRegsInfo structures in seRegsInfos array
+    uint32_t   numSe;
+    SeRegsInfo seRegsInfos[1];
+
+    static size_t CalculateStructureSize(uint32_t numSeRegsInfoForCalculation)
+    {
+        // std::max wrapped in parenthesis to ensure use of std::max instead of
+        // Windows header 'max' macro
+        numSeRegsInfoForCalculation = (std::max)(1U, numSeRegsInfoForCalculation);
+        return sizeof(SeInfo) + sizeof(SeRegsInfo) * (numSeRegsInfoForCalculation - 1);
+    }
+};
+
+// offset and data of a single shader wave register
+struct WaveRegisterInfo
+{
+    uint32_t offset;
+    uint32_t data;
+};
+
+// Note: Must exactly match KmdWaveRegistersEventData in KmdEventDefs.h
+struct WaveRegistersData : RgdEvent
+{
+    uint32_t version;
+
+    uint32_t shaderId;
+
+    // number of WaveRegisterInfo structures which follow
+    uint32_t numRegisters;
+
+    // array of WaveRegisterInfo
+    // actual array length is `numRegisters`
+    WaveRegisterInfo registerInfos[1];
 };
 
 // Header information on how to interpret the info struct
@@ -419,6 +579,52 @@ struct TraceProcessInfo
 {
     uint32_t process_id = 0;
     std::string process_path;
+};
+
+// CodeObject chunk header.
+struct RgdCodeObjectHeader
+{
+    uint32_t      pci_id;            /// The ID of the GPU the trace was run on
+    uint32_t      padding;
+    Rgd128bitHash code_object_hash;  /// Hash of the code object binary
+};
+
+// CodeObject loader event chunk header.
+struct RgdCodeObjectLoadEventHeader
+{
+    uint32_t count;  /// Number of Loader Events in this chunk
+};
+
+enum class RgdCodeObjectLoadEventType : uint32_t
+{
+    kCodeObjectLoadToGpuMemory     = 0,  ///< Code Object was loaded into GPU memory
+    kCodeObjectUnloadFromGpuMemory = 1   ///< Code Object was unloaded from GPU memory
+};
+
+// Code object loader event RDF chunk data format.
+struct RgdCodeObjectLoadEvent
+{
+    uint32_t                      pci_id;             ///< The ID of the GPU the trace was run on
+    RgdCodeObjectLoadEventType    loader_event_type;  ///< Type of loader event
+    uint64_t                      base_address;       ///< Base address where the code object was loaded
+    Rgd128bitHash                 code_object_hash;   ///< Hash of the (un)loaded code object binary
+    uint64_t                      timestamp;          ///< CPU timestamp of this event being triggered
+};
+
+/// API PSO correlation RDF chunk header format.
+struct RgdPsoCorrelationHeader
+{
+    uint32_t count;  /// Number of PSO Correlations in this chunk
+};
+
+/// API PSO correlation RDF chunk data format.
+struct RgdPsoCorrelation
+{
+    uint32_t      pci_id;                     ///< The ID of the GPU the trace was run on
+    uint32_t      padding;
+    uint64_t      api_pso_hash;               ///< Hash of the API-level Pipeline State Object
+    Rgd128bitHash internal_pipeline_hash;     ///< Hash of all inputs to the pipeline compiler
+    char          api_level_object_name[64];  ///< Debug object name (null-terminated)
 };
 
 #pragma pack(pop)

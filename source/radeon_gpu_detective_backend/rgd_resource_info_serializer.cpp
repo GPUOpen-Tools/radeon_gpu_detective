@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  serializer for memory resource information.
@@ -355,7 +355,7 @@ struct RgdVaInfo
     void SortResourceTimeline();
 };
 
-class RgdResourceInfoSerializer::pImplResourceInfoSerializer
+class RgdResourceInfoSerializer::Impl
 {
 public:
 
@@ -549,7 +549,7 @@ void RgdVaInfo::SortResourceTimeline()
     }
 }
 
-bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::InitializeDataSet(const std::string& trace_file_name)
+bool RgdResourceInfoSerializer::Impl::InitializeDataSet(const std::string& trace_file_name)
 {
     bool result = false;
 
@@ -566,7 +566,7 @@ bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::InitializeDataSet(c
 
 RgdResourceInfoSerializer::RgdResourceInfoSerializer()
 {
-    resource_info_serializer_impl_ = std::make_unique<pImplResourceInfoSerializer>();
+    resource_info_serializer_impl_ = std::make_unique<Impl>();
 }
 
 RgdResourceInfoSerializer::~RgdResourceInfoSerializer()
@@ -578,17 +578,17 @@ RgdResourceInfoSerializer::~RgdResourceInfoSerializer()
     }
 }
 
-bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::IsTextRequired()
+bool RgdResourceInfoSerializer::Impl::IsTextRequired()
 {
     return is_text_required_;
 }
 
-bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::IsJsonRequired()
+bool RgdResourceInfoSerializer::Impl::IsJsonRequired()
 {
     return is_json_required_;
 }
 
-bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::BuildResourceHistoryforVa(const Config& user_config, const uint64_t virtual_address)
+bool RgdResourceInfoSerializer::Impl::BuildResourceHistoryforVa(const Config& user_config, const uint64_t virtual_address)
 {
     SetOutputFormat(user_config);
 
@@ -649,7 +649,7 @@ bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::BuildResourceHistor
     return result;
 }
 
-uint64_t RgdResourceInfoSerializer::pImplResourceInfoSerializer::GetAllocationOffset(uint64_t allocation_base_address, uint64_t resource_virtual_address)
+uint64_t RgdResourceInfoSerializer::Impl::GetAllocationOffset(uint64_t allocation_base_address, uint64_t resource_virtual_address)
 {
     assert(resource_virtual_address >= allocation_base_address);
     return resource_virtual_address - allocation_base_address;
@@ -751,7 +751,7 @@ bool RgdResourceInfoSerializer::GetVirtualAddressHistoryInfo(const Config& user_
 }
 
 // Build resource map and virtual address residency info string and/or json from history events.
-bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::BuildResourceMapFromEvent(const RmtGpuAddress virtual_address, const RmtMemoryEventHistoryHandle     history_handle,
+bool RgdResourceInfoSerializer::Impl::BuildResourceMapFromEvent(const RmtGpuAddress virtual_address, const RmtMemoryEventHistoryHandle     history_handle,
     const RmtMemoryEventHistoryEventIndex event_index)
 {
     RmtErrorCode rmt_result = kRmtOk;
@@ -1144,7 +1144,7 @@ bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::BuildResourceMapFro
     return result;
 }
 
-uint64_t RgdResourceInfoSerializer::pImplResourceInfoSerializer::GetResourceCreateTime(const RgdVaInfo& va_info, const RgdResource& rgd_resource) const
+uint64_t RgdResourceInfoSerializer::Impl::GetResourceCreateTime(const RgdVaInfo& va_info, const RgdResource& rgd_resource) const
 {
     uint64_t resource_create_time = 0;
 
@@ -1167,7 +1167,7 @@ uint64_t RgdResourceInfoSerializer::pImplResourceInfoSerializer::GetResourceCrea
 }
 
 // Format resource history as a string.
-void RgdResourceInfoSerializer::pImplResourceInfoSerializer::ResourceHistoryToString(const Config&  user_config,
+void RgdResourceInfoSerializer::Impl::ResourceHistoryToString(const Config&  user_config,
                                                                                      const uint64_t virtual_address,
                                                                                      std::string&   out_text)
 {
@@ -1445,12 +1445,11 @@ void RgdResourceInfoSerializer::pImplResourceInfoSerializer::ResourceHistoryToSt
             txt << std::endl;
         }
     }
-    txt << std::endl;
     out_text = txt.str();
 }
 
 //Format resource history as a json.
-bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::ResourceHistoryToJson(const Config&   user_config,
+bool RgdResourceInfoSerializer::Impl::ResourceHistoryToJson(const Config&   user_config,
                                                                                    const uint64_t  virtual_address,
                                                                                    nlohmann::json& resource_info_json)
 {
@@ -1646,7 +1645,7 @@ bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::ResourceHistoryToJs
                 }
             }
         }
-        catch (nlohmann::json::exception e)
+        catch (nlohmann::json::exception& e)
         {
             ret = false;
             RgdUtils::PrintMessage(e.what(),
@@ -1661,7 +1660,7 @@ bool RgdResourceInfoSerializer::pImplResourceInfoSerializer::ResourceHistoryToJs
 }
 
 // Set output format.
-void RgdResourceInfoSerializer::pImplResourceInfoSerializer::SetOutputFormat(const Config& user_config)
+void RgdResourceInfoSerializer::Impl::SetOutputFormat(const Config& user_config)
 {
     // True if the output we are required to produce is in text format (file or console).
     is_text_required_ = !user_config.output_file_txt.empty() || user_config.output_file_json.empty();
@@ -1669,7 +1668,7 @@ void RgdResourceInfoSerializer::pImplResourceInfoSerializer::SetOutputFormat(con
     is_raw_time_ = user_config.is_raw_time;
 }
 
-void RgdResourceInfoSerializer::pImplResourceInfoSerializer::SetCpuFrequency(const uint64_t cpu_frequency)
+void RgdResourceInfoSerializer::Impl::SetCpuFrequency(const uint64_t cpu_frequency)
 {
     assert(cpu_frequency != 0);
     if (cpu_frequency == 0)
@@ -1680,7 +1679,7 @@ void RgdResourceInfoSerializer::pImplResourceInfoSerializer::SetCpuFrequency(con
     cpu_frequency_ = cpu_frequency;
 }
 
-void RgdResourceInfoSerializer::pImplResourceInfoSerializer::GenerateResourceTimeline(const Config&  user_config,
+void RgdResourceInfoSerializer::Impl::GenerateResourceTimeline(const Config&  user_config,
                                                                                       const uint64_t virtual_address,
                                                                                       std::string&   resource_timeline)
 {
@@ -1860,7 +1859,7 @@ void RgdResourceInfoSerializer::pImplResourceInfoSerializer::GenerateResourceTim
     resource_timeline = txt.str();
 }
 
-std::string RgdResourceInfoSerializer::pImplResourceInfoSerializer::GetTimestampString(const uint64_t timestamp)
+std::string RgdResourceInfoSerializer::Impl::GetTimestampString(const uint64_t timestamp)
 {
     std::stringstream time_txt;
 
@@ -1876,7 +1875,7 @@ std::string RgdResourceInfoSerializer::pImplResourceInfoSerializer::GetTimestamp
     return time_txt.str();
 }
 
-inline std::string RgdResourceInfoSerializer::pImplResourceInfoSerializer::GetRealTime(uint64_t ticks)
+inline std::string RgdResourceInfoSerializer::Impl::GetRealTime(uint64_t ticks)
 {
     std::stringstream time_txt;
     assert(cpu_frequency_ != 0);

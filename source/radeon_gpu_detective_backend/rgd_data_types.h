@@ -1,5 +1,5 @@
 //=============================================================================
-// Copyright (c) 2024 Advanced Micro Devices, Inc. All rights reserved.
+// Copyright (c) 2025 Advanced Micro Devices, Inc. All rights reserved.
 /// @author AMD Developer Tools Team
 /// @file
 /// @brief  global data types.
@@ -12,6 +12,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <set>
 
 // JSON.
 #include "json/single_include/nlohmann/json.hpp"
@@ -24,6 +25,9 @@
 
 // System info.
 #include "system_info_utils/source/system_info_reader.h"
+
+// Local.
+#include "rgd_asic_info.h"
 
 // Marker value is in bits [0:27] while marker source is in bits [28:31].
 static const uint32_t kMarkerValueMask = 0x0FFFFFFF;
@@ -42,6 +46,7 @@ static const char* kJsonElemPageFaultSummary = "page_fault_summary";
 
 // String not available.
 static const char* kStrNotAvailable = "N/A";
+static const char* kStrUnknown      = "Unknown";
 
 // Heap type strings.
 static const char* kStrHeapTypeLocal = "Local (GPU memory, CPU-visible)";
@@ -69,6 +74,15 @@ static const char* kChunkIdDriverOverrides = "DriverOverrides";
 // DriverOverrides chunk version constants.
 static const uint32_t kChunkMaxSupportedVersionDriverOverrides = 3;
 
+static const char* kChunkIdCodeObject = "CodeObject";
+static const uint32_t kChunkMaxSupportedVersionCodeObject = 2;
+
+static const char* kChunkIdCOLoadEvent = "COLoadEvent";
+static const uint32_t kChunkMaxSupportedVersionCOLoadEvent = 3;
+
+static const char* kChunkIdPsoCorrelation = "PsoCorrelation";
+static const uint32_t kChunkMaxSupportedVersionPsoCorrelation = 3;
+
 // DriverOverrides chunk JSON element name constants.
 static const char* kJsonElemComponentsDriverOverridesChunk          = "Components";
 static const char* kJsonElemComponentDriverOverridesChunk           = "Component";
@@ -81,6 +95,25 @@ static const char* kJsonElemCurrentDriverOverridesChunk             = "Current";
 static const char* kJsonElemIsDriverExperimentsDriverOverridesChunk = "IsDriverExperiments";
 static const char* kErrorMsgInvalidDriverOverridesJson              = "invalid DriverOverrides JSON";
 static const char* kErrorMsgFailedToParseDriverExperimentsInfo      = "failed to parse Driver Experiments info";
+
+// Enhanced Crash Info JSON element name constants.
+static const char* kJsonElemShaders                 = "shaders";
+static const char* kJsonElemShaderInfo              = "shader_info";
+static const char* kJsonElemShaderInfoId            = "shader_info_id";
+static const char* kJsonElemApiPsoHash              = "api_pso_hash";
+static const char* kJsonElemApiShaderHashHi         = "api_shader_hash_hi";
+static const char* kJsonElemApiShaderHashLo         = "api_shader_hash_lo";
+static const char* kJsonElemApiStage                = "api_stage";
+static const char* kJsonElemDisassembly             = "disassembly";
+static const char* kJsonElemInstructionOffset       = "instruction_offset";
+static const char* kJsonElemInstr                   = "instr";
+static const char* kJsonElemInstructionsDisassembly = "instructions_disassembly";
+static const char* kJsonElemWaveCount               = "wave_count";
+static const char* kJsonElemInstructionsHidden      = "instructions_hidden";
+
+// ID prefixes
+static const char* kStrPrefixShaderInfoId = "ShaderInfoID";
+static const char* kStrPrefixCodeObjectId = "CodeObjectID";
 
 // Represents the execution status of an execution marker.
 // A marker can be in a one of 3 states:
@@ -138,6 +171,9 @@ struct Config
 
     // Include internal barriers in Execution Marker Tree. Internal barriers are filtered out by default.
     bool is_include_internal_barriers = false;
+
+    // Include full code object disassembly.
+    bool is_all_disassembly = false;
 };
 
 // Stores time information about the crash analysis session.
@@ -194,11 +230,21 @@ struct MarkerExecutionStatusFlags
     bool is_finished = false;
 };
 
+// Holds the code object chunk info.
+struct CodeObject
+{
+    RgdCodeObjectHeader chunk_header;
+
+    // The payload where the code object binary blob data is stored.
+    std::vector<std::uint8_t> chunk_payload;
+};
+
 // Holds the parsed contents of a crash dump RDF file.
 // For now RMT is not included as it is being parsed separately through a dedicated API.
 struct RgdCrashDumpContents
 {
     system_info_utils::SystemInfo system_info;
+    ecitrace::GpuSeries           gpu_series{0};
     TraceChunkApiInfo             api_info;
     CrashData umd_crash_data;
     CrashData kmd_crash_data;
@@ -208,6 +254,45 @@ struct RgdCrashDumpContents
 
     // Driver Experiments JSON
     nlohmann::json driver_experiments_json;
+
+    // CodeObject Database.
+    std::map<Rgd128bitHash, CodeObject> code_objects_map;
+
+    // CodeObject Loader Events.
+    std::vector<RgdCodeObjectLoadEvent> code_object_load_events;
+
+    // PSO Correlations.
+    std::vector<RgdPsoCorrelation> pso_correlations;
+};
+
+// Holds the information about the crashing shader for correlation with the execution markers nodes.
+struct RgdCrashingShaderInfo
+{
+    std::vector<std::string> crashing_shader_ids;
+    std::vector<std::string> api_stages;
+};
+
+struct WaveInfoRegisters
+{
+    uint32_t sq_wave_status{0};
+    uint32_t sq_wave_pc_hi{0};
+    uint32_t sq_wave_pc_lo{0};
+
+    //sq_wave_trapsts is available only for RDNA2 and RDNA3.
+    uint32_t sq_wave_trapsts{0};
+    uint32_t sq_wave_ib_sts{0};
+    uint32_t sq_wave_ib_sts2{0};
+    uint32_t sq_wave_active{0};
+    uint32_t sq_wave_exec_hi{0};
+    uint32_t sq_wave_exec_lo{0};
+    uint32_t sq_wave_hw_id1{0};
+    uint32_t sq_wave_hw_id2{0};
+    uint32_t sq_wave_valid_and_idle{0};
+
+    // RDNA4 specific registers.
+    uint32_t sq_wave_state_priv{0};
+    uint32_t sq_wave_excp_flag_priv{0};
+    uint32_t sq_wave_excp_flag_user{0};
 };
 
 #endif // RADEON_GPU_DETECTIVE_SOURCE_RGD_DATA_TYPES_H_
