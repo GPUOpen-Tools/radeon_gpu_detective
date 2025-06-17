@@ -16,6 +16,3 @@ Supported hardware: Navi2 and Navi3 GPUs
 
 ## Dependencies ##
 * Python 3.x (tested with 3.6.5)
-
-## More Details ##
-* [RGD Automated Test Kit Confluence Page](https://confluence.amd.com/display/DEVTOOLS/RGD+Automated+Test+Kit)

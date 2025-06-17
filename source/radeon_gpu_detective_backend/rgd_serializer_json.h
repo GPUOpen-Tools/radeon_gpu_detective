@@ -25,7 +25,7 @@
 // JSON Schema version
 #define STRINGIFY_JSON_SCHEMA_VERSION(major, minor) STRINGIFY_MACRO(major) "." STRINGIFY_MACRO(minor)
 #define RGD_JSON_SCHEMA_VERSION_MAJOR 1
-#define RGD_JSON_SCHEMA_VERSION_MINOR 1
+#define RGD_JSON_SCHEMA_VERSION_MINOR 2
 #define RGD_JSON_SCHEMA_VERSION STRINGIFY_JSON_SCHEMA_VERSION(RGD_JSON_SCHEMA_VERSION_MAJOR, RGD_JSON_SCHEMA_VERSION_MINOR)
 
 // *** INTERNALLY-LINKED AUXILIARY CONSTANTS - BEGIN ***
@@ -42,10 +42,7 @@ public:
     ~RgdSerializerJson() = default;
 
     // Set input information.
-    void SetInputInfo(const Config&                        user_config,
-                      const TraceProcessInfo&              process_info,
-                      const system_info_utils::SystemInfo& system_info,
-                      const TraceChunkApiInfo&             api_info);
+    void SetInputInfo(const Config& user_config, const RgdCrashDumpContents& contents, const std::vector<std::string>& debug_info_files);
 
     // Serializes and sets relevant system info.
     void SetSystemInfoData(const Config& user_config, const system_info_utils::SystemInfo& system_info);

@@ -19,6 +19,11 @@ AmdGpuDisApiTable rgd_disassembler_api_table = {};
 // *** INTERNALLY-LINKED AUXILIARY FUNCTIONS - BEGIN ***
 static uint64_t crashing_shader_count = 0;
 
+// Error message constants.
+static const char* kErrorStrFailedToGetDisassembledDxilOutput = "failed to get disassembled DXIL output for ";
+static const char* kErrorStrFailedToExtractDebugInfo          = "failed to extract debug info of ";
+static const char* kStrExtractedDebugInfoForInFlightShader    = "extracted debug info for in-flight shader 0x";
+
 // Initialize the comgr handles for the code object entries.
 static bool RgdCodeObjDbInitializeComgrHandles(RgdCodeObjectDatabase* code_object_db)
 {
@@ -170,10 +175,10 @@ static void BuildInstructionsVectorForShader(const std::string&                 
     // Parse the disassembly text to extract instructions and their offsets.
     while (std::getline(disassembly_stream, line))
     {
-        // Check if the line starts with a tab character
+        // Check if the line starts with a tab character.
         if (!line.empty() && line[0] == '\t')
         {
-            // Replace the tab character with spaces (e.g., 4 spaces)
+            // Replace the tab character with spaces (e.g., 4 spaces).
             line.replace(0, 1, "    ");
         }
 
@@ -235,7 +240,7 @@ static bool IsInFlightShader(const std::map<uint64_t, size_t>& pc_offset_to_hung
         for (const std::pair<uint64_t, size_t>& pc_offset_to_hung_wave_count : pc_offset_to_hung_wave_count_map_)
         {
             // Check if the PC offset falls within the range of the shader instructions.
-            // PC always points to the next instruction to execute. So it not expected to be equal to the offset for the first instruction in the shader
+            // PC always points to the next instruction to execute. So it not expected to be equal to the offset for the first instruction in the shader.
             if (pc_offset_to_hung_wave_count.first > start_offset && pc_offset_to_hung_wave_count.first <= end_offset)
             {
                 is_in_flight_shader = true;
@@ -365,6 +370,302 @@ static void RgdCodeObjDbInitCodeObjEntry(RgdCodeObjectEntry* entry)
             }
         }
     }
+}
+
+// Try to extract the debug info from an embedded pdb file.
+static bool ParseEmbeddedPdbFile(RgdDxbcParser& dxbc_parser, RgdShaderInfo& shader_info, std::string& error_msg)
+{
+    bool ret = false;
+    
+    if (shader_info.is_in_flight_shader)
+    {
+        // Get the DXC dumpbin output for the shader.
+        std::string dxc_dumpbin_output;
+        std::string matching_pdb_file_path;
+        if (dxbc_parser.FindDxbcFileByHash(
+                shader_info.api_shader_hash_hi, shader_info.api_shader_hash_lo, matching_pdb_file_path))
+        {
+            // Found the DXBC file by hash (may or may not include the full debug info). Try to extract debug info from it.
+            shader_info.pdb_file_path = std::move(matching_pdb_file_path);
+            if (dxbc_parser.GetDumpbinOutputForFile(shader_info.pdb_file_path, dxc_dumpbin_output))
+            {
+                shader_info.dxc_dumpbin_output = std::move(dxc_dumpbin_output);
+                shader_info.has_debug_info     = true;
+            }
+            else
+            {
+                shader_info.has_debug_info = false;
+                std::stringstream error_txt;
+                error_txt << kRgdErrorMessage << kErrorStrFailedToGetDisassembledDxilOutput << shader_info.pdb_file_path << "." << std::endl;
+                error_msg.append(error_txt.str());
+            }
+        }
+        else
+        {
+            // Failed to find the DXBC file by hash - no debug info available for this shader.
+            shader_info.has_debug_info = false;
+            std::stringstream console_message;
+            console_message << "PDB resolution failed for in-flight shader 0x" << std::hex
+                            << shader_info.api_shader_hash_hi << shader_info.api_shader_hash_lo << std::dec << ".";
+            RgdUtils::PrintMessage(console_message.str().c_str(), RgdMessageType::kError, true);
+        }
+        
+        // Try to extract debug info from the dumpbin output.
+        if (shader_info.has_debug_info)
+        {
+            std::string entry_name, source_file_name, high_level_source, shader_io_and_resource_bindings;
+            ret = dxbc_parser.ExtractShaderDebugInfo(
+                shader_info.dxc_dumpbin_output, 
+                entry_name, 
+                source_file_name, 
+                high_level_source,
+                shader_io_and_resource_bindings);
+            
+            // For embedded PDB files, all the required debug info should be available in the DXC's dumpbin output. True return from ExtractShaderDebugInfo indicates success in finding the full debug info.
+            // For separate/small PDB files, entry point name and shader IO/resource bindings are available in DXBC file matched with the shader hash.
+            // And the high level source code and file name is available in the PDB file pointed by the first DXBC file.
+            if (!entry_name.empty() && !shader_io_and_resource_bindings.empty())
+            {
+                shader_info.entry_point_name = std::move(entry_name);
+                shader_info.shader_io_and_resource_bindings = std::move(shader_io_and_resource_bindings);
+            }
+
+            if (!source_file_name.empty() && !high_level_source.empty())
+            {
+                shader_info.source_file_name  = std::move(source_file_name);
+                shader_info.high_level_source = std::move(high_level_source);
+
+                std::stringstream console_message;
+                console_message << kStrExtractedDebugInfoForInFlightShader << std::hex 
+                              << shader_info.api_shader_hash_hi << shader_info.api_shader_hash_lo 
+                              << std::dec << " from DXC dumpbin output.";
+                RgdUtils::PrintMessage(console_message.str().c_str(), RgdMessageType::kInfo, true);
+            }
+            else
+            {
+                std::stringstream error_txt;
+                error_txt << kRgdErrorMessage << kErrorStrFailedToExtractDebugInfo << shader_info.pdb_file_path << "." << std::endl;
+                error_msg.append(error_txt.str());
+            }
+        }
+    }
+    
+    return ret;
+}
+
+// Try to extract debug info from a separate PDB file.
+static bool ParseSeparatePdbFile(RgdDxbcParser& dxbc_parser, RgdShaderInfo& shader_info, std::string& error_msg)
+{
+    bool ret = false;
+    
+    if (!shader_info.pdb_file_path.empty())
+    {
+        // Search for the separate PDB file in debug directories.
+        std::string separate_pdb_file_name;
+        std::string separate_pdb_path;
+        if (dxbc_parser.ExtractSeparatePdbFileNameFromDxbc(shader_info.pdb_file_path, separate_pdb_file_name))
+        {
+            if (dxbc_parser.FindPdbFileInDirectories(separate_pdb_file_name, separate_pdb_path))
+            {
+                // Separate PDB file found. Try to extract debug info from it.
+                RgdUtils::PrintMessage("separate PDB file for in-flight shader.", RgdMessageType::kInfo, true); 
+                
+                // Replace the existing DXBC file path (found by matching shader hash) with the separate PDB file path.
+                shader_info.pdb_file_path = separate_pdb_path;
+
+                // Get the dumpbin output for the separate PDB file.
+                std::string separate_pdb_dumpbin_output;
+                if (dxbc_parser.GetDumpbinOutputForFile(separate_pdb_path, separate_pdb_dumpbin_output))
+                {
+                    shader_info.dxc_dumpbin_output = std::move(separate_pdb_dumpbin_output);
+                    
+                    // Extract debug info from the separate PDB file.
+                    std::string entry_name, source_file_name, high_level_source, shader_io_and_resource_bindings;
+                    ret = dxbc_parser.ExtractShaderDebugInfo(
+                        shader_info.dxc_dumpbin_output, 
+                        entry_name, 
+                        source_file_name, 
+                        high_level_source,
+                        shader_io_and_resource_bindings,
+                        true);
+                        
+                    if (ret)
+                    {
+                        shader_info.has_debug_info                  = true;
+                        shader_info.entry_point_name                = std::move(entry_name);
+                        shader_info.source_file_name                = std::move(source_file_name);
+                        shader_info.high_level_source               = std::move(high_level_source);
+                        shader_info.shader_io_and_resource_bindings = std::move(shader_io_and_resource_bindings);
+
+                        std::stringstream console_message;
+                        console_message << kStrExtractedDebugInfoForInFlightShader << std::hex 
+                                      << shader_info.api_shader_hash_hi << shader_info.api_shader_hash_lo 
+                                      << std::dec << " from separate PDB file: " << separate_pdb_file_name;
+                        RgdUtils::PrintMessage(console_message.str().c_str(), RgdMessageType::kInfo, true);
+                    }
+                    else
+                    {
+                        std::stringstream error_txt;
+                        error_txt << kRgdErrorMessage << kErrorStrFailedToExtractDebugInfo << shader_info.pdb_file_path << "."
+                                  << std::endl;
+                        error_msg.append(error_txt.str());
+                    }
+                }
+                else
+                {
+                    std::stringstream error_txt;
+                    error_txt << kRgdErrorMessage << kErrorStrFailedToGetDisassembledDxilOutput << shader_info.pdb_file_path << "." << std::endl;
+                    error_msg.append(error_txt.str());
+                }
+            }
+            else
+            {
+                // Failed to find the separate PDB file in the debug directories.
+                std::stringstream console_message;
+                console_message << "failed to find separate PDB file for in-flight shader 0x" << std::hex 
+                              << shader_info.api_shader_hash_hi << shader_info.api_shader_hash_lo 
+                              << std::dec << ".";
+                RgdUtils::PrintMessage(console_message.str().c_str(), RgdMessageType::kError, true);
+            }
+        }
+        else
+        {
+            // Failed to extract the separate PDB file name from the DXBC file.
+            std::stringstream console_message;
+            console_message << "failed to extract PDB path from DXBC file for in-flight shader 0x" << std::hex 
+                          << shader_info.api_shader_hash_hi << shader_info.api_shader_hash_lo 
+                          << std::dec << ".";
+            RgdUtils::PrintMessage(console_message.str().c_str(), RgdMessageType::kError, true);
+        }
+    }
+    else
+    {
+        // Should not reach here.
+        assert(false);
+    }
+    
+    return ret;
+}
+
+// Process small PDB files (generated with 'Zs' option).
+static bool ParseSmallPdbFile(RgdDxbcParser& dxbc_parser, RgdShaderInfo& shader_info, std::string& error_msg)
+{
+    bool ret = false;
+    
+    if (!shader_info.pdb_file_path.empty())
+    {
+        // Separate PDB file found. Check if it is a small PDB file generated with 'Zs' option and try to extract debug info from it.
+        std::string high_level_source_code, source_file_name;
+        ret = dxbc_parser.ExtractDebugInfoFromSmallPdb(
+            shader_info.pdb_file_path, high_level_source_code,
+            source_file_name);
+            
+        if (ret)
+        {
+            shader_info.high_level_source = std::move(high_level_source_code);
+            shader_info.source_file_name = std::move(source_file_name);
+            
+            std::stringstream console_message;
+            console_message << kStrExtractedDebugInfoForInFlightShader << std::hex 
+                          << shader_info.api_shader_hash_hi << shader_info.api_shader_hash_lo 
+                          << std::dec << " from small PDB file.";
+            RgdUtils::PrintMessage(console_message.str().c_str(), RgdMessageType::kInfo, true);
+        }
+        else
+        {
+            std::stringstream error_txt;
+            error_txt << kRgdErrorMessage << kErrorStrFailedToExtractDebugInfo << shader_info.pdb_file_path << "." << std::endl;
+            error_msg.append(error_txt.str());
+        }
+    }
+    else
+    {
+        // Should not reach here.
+        assert(false);
+        RgdUtils::PrintMessage("empty PDB path.", RgdMessageType::kError, true);
+    }
+    
+    return ret;
+}
+
+// Log failure to extract debug info.
+static void LogDebugInfoExtractionFailure(const RgdShaderInfo& shader_info, const std::string& error_messages)
+{
+    std::stringstream console_message;
+    console_message << "failed to extract debug info for in-flight shader 0x" << std::hex 
+                  << shader_info.api_shader_hash_hi << shader_info.api_shader_hash_lo 
+                  << std::dec << ". Errors encountered:" << std::endl << error_messages;
+    RgdUtils::PrintMessage(console_message.str().c_str(), RgdMessageType::kError, true);
+}
+
+bool RgdCodeObjectDatabase::ExtractDebugInfo(const Config& user_config, const std::vector<std::string>& debug_info_dir)
+{
+    bool ret = false;
+
+    if (!debug_info_dir.empty())
+    {
+        // Initialize DXBC parser.
+        RgdDxbcParser dxbc_parser;
+        if (dxbc_parser.Initialize(user_config, debug_info_dir))
+        {
+            // Iterate through all code object entries.
+            for (auto& entry : entries_)
+            {
+                // Process each shader in the entry.
+                for (auto& [hw_stage, shader_info] : entry.hw_stage_to_shader_info_map_)
+                {
+                    // Try to find matching debug info if this is an in-flight shader.
+                    if (shader_info.is_in_flight_shader)
+                    {
+                        bool is_debug_info_found = false;
+                        std::string error_messages;
+                        
+                        // First try direct extraction from embedded PDB.
+                        is_debug_info_found = ParseEmbeddedPdbFile(dxbc_parser, shader_info, error_messages);
+                        
+                        // If embedded pdb approach failed and DXBC file found matching the in-flight shader hash - try the separate PDB file approach.
+                        if (!is_debug_info_found && !shader_info.pdb_file_path.empty())
+                        {
+                            is_debug_info_found = ParseSeparatePdbFile(dxbc_parser, shader_info, error_messages);
+                        }
+                        
+                        // If separate pdb approach failed and a separate pdb file found - try small PDB format (Zs option).
+                        if (!is_debug_info_found && !shader_info.pdb_file_path.empty())
+                        {
+                            is_debug_info_found = ParseSmallPdbFile(dxbc_parser, shader_info, error_messages);
+                        }
+                        
+                        // Log if we failed to extract debug info from any source.
+                        if (!is_debug_info_found)
+                        {
+                            LogDebugInfoExtractionFailure(shader_info, error_messages);
+                        }
+                    }
+                }
+            }
+            
+            // If we found at least one shader with debug info, consider this a success.
+            for (auto& entry : entries_)
+            {
+                for (auto& [hw_stage, shader_info] : entry.hw_stage_to_shader_info_map_)
+                {
+                    if (shader_info.is_in_flight_shader && shader_info.has_debug_info)
+                    {
+                        ret = true;
+                        break;
+                    }
+                }
+                if (ret) break;
+            }
+        }
+    }
+    else
+    {
+        // Should not reach here.
+        assert(false);
+    }
+
+    return ret;
 }
 
 // *** INTERNALLY-LINKED AUXILIARY FUNCTIONS - END ***

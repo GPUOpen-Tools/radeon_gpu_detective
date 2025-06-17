@@ -15,7 +15,7 @@ set SPHINXPROJ=RadeonGPUDetective
 
 if "%1" == "" goto help
 
-REM   The sphinx-rtd-theme dependency was depreciated in newer versions of Sphinx
+REM   The sphinx-rtd-theme dependency was deprecated in newer versions of Sphinx
 REM   and is no longer included by default
 python -m pip install -q --disable-pip-version-check --user sphinx-rtd-theme
 

@@ -13,7 +13,6 @@ import importlib.util
 import argparse
 import shutil
 import subprocess
-import distutils.spawn
 import platform
 import time
 
@@ -274,7 +273,7 @@ def generate_config(config, args):
             with open(vscode_json_file, 'w') as f:
                 json.dump(json_data, f, indent=4)
 
-    if not distutils.spawn.find_executable(cmake_args[0]):
+    if not shutil.which(cmake_args[0]):
         log_error_and_exit("cmake not found")
 
     p = subprocess.Popen(cmake_args, cwd=cmake_dir, stderr=subprocess.STDOUT)
@@ -444,12 +443,6 @@ def main():
 
             if(p.returncode != 0):
                 log_error_and_exit("CMake build failed with %d" % p.returncode)
-
-            log_print( "\nBuilding Documentation\n")
-
-            p = subprocess.Popen(cmake_args_docs, cwd=cmake_output_dir, stderr=subprocess.STDOUT)
-            p.wait()
-            sys.stdout.flush()
 
     minutes, seconds = divmod(time.time() - start_time, 60)
     log_print("Successfully completed in {0:.0f} minutes, {1:.1f} seconds".format(minutes,seconds))

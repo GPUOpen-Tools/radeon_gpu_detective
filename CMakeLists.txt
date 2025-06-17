@@ -6,11 +6,14 @@
 #=============================================================================
 
 cmake_minimum_required (VERSION 3.10)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 project (RGD)
 
 # Define version information
 set(RGD_MAJOR_VERSION 1)
-set(RGD_MINOR_VERSION 4)
+set(RGD_MINOR_VERSION 5)
 set(RGD_PATCH_NUMBER 0)
 if (NOT RGD_BUILD_NUMBER)
     set(RGD_BUILD_NUMBER 0)
@@ -35,7 +38,7 @@ include_directories("${PROJECT_SOURCE_DIR}/external/")
 include_directories("${PROJECT_SOURCE_DIR}/external/rdf/rdf/inc/")
 include_directories("${PROJECT_SOURCE_DIR}/external/third_party/")
 include_directories("${PROJECT_SOURCE_DIR}/external/comgr_package/comgr/include/")
-include_directories("${PROJECT_SOURCE_DIR}/external/comgr_package/comgr_utils/")
+include_directories("${PROJECT_SOURCE_DIR}/external/comgr_utils/")
 
 # rgd command line tool.
 add_subdirectory (source/radeon_gpu_detective_cli)
@@ -60,7 +63,7 @@ add_subdirectory(external/system_info_utils)
 add_subdirectory(test/source/rgd_test)
 
 # COMGR.
-add_subdirectory(external/comgr_package/comgr_utils ComgrUtils)
+add_subdirectory(external/comgr_utils ComgrUtils)
 
 # Define the location of dependent libraries
 IF(WIN32)
@@ -140,12 +143,18 @@ IF(WIN32)
     install(FILES external/comgr_package/comgr/lib/VS2022/x64/amd_comgr_2.dll
         DESTINATION ./${CPACK_RGD_CLI_FULL_PACKAGE_NAME}
         COMPONENT rgd_cli_component)
+    install(FILES external/third_party/DXC/bin/x64/dxc.exe
+        DESTINATION ./${CPACK_RGD_CLI_FULL_PACKAGE_NAME}/utils/dx12/dxc
+        COMPONENT rgd_cli_component)
 ELSEIF(UNIX)
     install(FILES ${AMDGPU_DIS_SHAREDLIB}
         DESTINATION ./${CPACK_RGD_CLI_FULL_PACKAGE_NAME}/lib/
         COMPONENT rgd_cli_component)
     install(FILES ${AMD_COMGR_SHAREDLIB}
         DESTINATION ./${CPACK_RGD_CLI_FULL_PACKAGE_NAME}/lib/
+        COMPONENT rgd_cli_component)
+    install(FILES external/third_party/DXC/bin/dxc
+        DESTINATION ./${CPACK_RGD_CLI_FULL_PACKAGE_NAME}/utils/dx12/dxc
         COMPONENT rgd_cli_component)
 ENDIF()
 

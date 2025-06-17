@@ -106,7 +106,10 @@ enum class ExecutionMarkerInfoType : uint8_t
     BarrierBegin = 6,
 
     // Indicate that the header precedes a BarrierEndInfo struct
-    BarrierEnd = 7
+    BarrierEnd = 7,
+
+    // Indicate that the header precedes a NestedCmdBufferInfo struct
+    NestedCmdBuffer = 8
 };
 
 /// Unique id representing each event. Each variable name of the enum value corresponds to the
@@ -504,6 +507,13 @@ struct BarrierEndInfo
 
     // Pal::Developer::BarrierOperations.caches
     uint16_t    caches;
+};
+
+/// NestedCmdBufferInfo follows header with ExecutionMarkerInfoType::NestedCmdBuffer
+struct NestedCmdBufferInfo
+{
+    // cmdBufferId of the nested command buffer
+    uint32_t nestedCmdBufferId;
 };
 
 // CmdBufferQueueType declaration is equivalent to RgpSqttMarkerQueueType and should match the values as defined in dxcp\ddi\rgpSqttMarker.h.

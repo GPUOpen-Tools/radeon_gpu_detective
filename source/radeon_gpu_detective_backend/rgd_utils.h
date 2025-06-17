@@ -7,6 +7,8 @@
 #ifndef RADEON_GPU_DETECTIVE_SOURCE_RGD_UTILS_H_
 #define RADEON_GPU_DETECTIVE_SOURCE_RGD_UTILS_H_
 
+#include "rgd_data_types.h"
+
 // C++.
 #include <string>
 
@@ -15,6 +17,11 @@
 
 // Dev driver.
 #include "dev_driver/include/rgdevents.h"
+
+// Message strings.
+static const char* kRgdInfoMessage    = "INFO: ";
+static const char* kRgdWarningMessage = "WARNING: ";
+static const char* kRgdErrorMessage   = "ERROR: ";
 
 // Types of messages that are printed by the tool.
 enum class RgdMessageType
@@ -78,6 +85,10 @@ public:
 
     // Returns the alphanumeric string id bu appending the input string prefix and id.
     static std::string GetAlphaNumericId(std::string id_prefix, uint64_t id);
+
+    // Saves parsed code object binaries to the output directory and return true on success. output_dir_str stores the output directory path.
+    // And the output directory is created based on the input file name.
+    static bool SaveCodeObjectBinaries(const std::string& file_name, const std::map<Rgd128bitHash, CodeObject>& code_objects_map, std::string& output_dir_str);
 
 private:
     RgdUtils() = delete;

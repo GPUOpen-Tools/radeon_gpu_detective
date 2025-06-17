@@ -11,6 +11,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <filesystem>
 
 // Local.
 #include "rgd_asic_info.h"
@@ -63,6 +64,19 @@ static bool IsInputValid(const Config& user_config)
             std::cerr << "ERROR: invalid output file path: " << user_config.output_file_txt << std::endl;
         }
     }
+    if(ret && !user_config.pdb_dir.empty())
+    {
+        for (const auto& dir : user_config.pdb_dir)
+        {
+            ret = std::filesystem::exists(dir) && 
+                  std::filesystem::is_directory(dir);
+            if (!ret)
+            {
+                std::cerr << "ERROR: PDB directory does not exist: " << dir << std::endl;
+                break;
+            }
+        }
+    }
     return ret;
 }
 
@@ -108,6 +122,7 @@ static bool ParseCrashDump(const Config& user_config, RgdCrashDumpContents& cont
     bool is_codeobject_db_parsed = false;
     bool is_codeobject_loader_events_parsed = false;
     bool is_pso_correlations_parsed         = false;
+    bool is_rgd_extended_info_parsed = false;
 
     try
     {
@@ -156,6 +171,8 @@ static bool ParseCrashDump(const Config& user_config, RgdCrashDumpContents& cont
         // Parse the 'PsoCorrelation' chunk.
         is_pso_correlations_parsed = RgdParsingUtils::PsoCorrelationChunk(chunk_file, kChunkIdPsoCorrelation, contents.pso_correlations);
 
+        // Parse the 'RgdExtendedInfo' chunk.
+        is_rgd_extended_info_parsed = RgdParsingUtils::ParseRgdExtendedInfoChunk(chunk_file, kChunkIdRgdExtendedInfo, contents.rgd_extended_info);
     }
     catch (const std::exception& e)
     {
@@ -209,6 +226,16 @@ static bool ParseCrashDump(const Config& user_config, RgdCrashDumpContents& cont
             std::cerr << "ERROR: failed to parse DriverOverrides chunk in crash dump file." << std::endl;
         }
 
+        assert(is_rgd_extended_info_parsed);
+        if (is_rgd_extended_info_parsed)
+        {
+            RgdUtils::PrintMessage("RgdExtendedInfo chunk parsed successfully.", RgdMessageType::kInfo, user_config.is_verbose);
+        }
+        else
+        {
+            std::cerr << "ERROR: failed to parse RgdExtendedInfo chunk in crash dump file." << std::endl;
+        }
+
         // Done parsing the file here.
         file.Close();
 
@@ -232,10 +259,6 @@ static void SerializeTextOutput(const RgdCrashDumpContents&     contents,
 {
     bool is_ok = false;
     std::stringstream txt;
-
-    std::string input_info_str;
-    RgdSerializer::InputInfoToString(user_config, contents.crashing_app_process_info, contents.system_info, contents.api_info, input_info_str);
-    txt << input_info_str;
 
     std::string system_info_str;
     RgdSerializer::ToString(user_config, contents.system_info, contents.driver_experiments_json, system_info_str);
@@ -440,37 +463,46 @@ static void SerializeTextOutput(const RgdCrashDumpContents&     contents,
     txt << "===========" << std::endl;
     txt << "SHADER INFO" << std::endl;
     txt << "===========" << std::endl << std::endl;
-    std::string shader_info_text;
-    enhanced_crash_info_serializer.GetInFlightShaderInfo(user_config, shader_info_text);
+
     const char* kStrNoShaderInfoAvailable = "INFO: no information available about in-flight shaders.";
-    if (shader_info_text.empty())
+    if (!contents.rgd_extended_info.is_hca_enabled)
     {
-        txt << kStrNoShaderInfoAvailable << std::endl;
+        txt << kStrNoShaderInfoAvailable << " Hardware crash analysis feature was not enabled at the time of the capture.";
     }
     else
     {
-        txt << shader_info_text << std::endl;
-    }
-
-    if (user_config.is_all_disassembly)
-    {
-        txt << std::endl;
-        txt << "================" << std::endl;
-        txt << "CODE OBJECT INFO" << std::endl;
-        txt << "================" << std::endl << std::endl;
-        txt << "This section includes the complete disassembly of all Code Object binaries that had at least one shader in flight during the crash."
-            << std::endl
-            << "You can use the Shader info ID handle to correlate what shader was part of what Code Object." << std::endl << std::endl;
-        std::string complete_disassembly_text;
-        is_ok = enhanced_crash_info_serializer.GetCompleteDisassembly(user_config, complete_disassembly_text);
-
-        if (is_ok && !complete_disassembly_text.empty())
+        std::string shader_info_text;
+        enhanced_crash_info_serializer.GetInFlightShaderInfo(user_config, shader_info_text);
+        if (shader_info_text.empty())
         {
-            txt << complete_disassembly_text << std::endl;
+            txt << kStrNoShaderInfoAvailable << std::endl;
         }
         else
         {
-            txt << kStrNoShaderInfoAvailable << std::endl;  
+            txt << shader_info_text << std::endl;
+        }
+
+        if (user_config.is_all_disassembly)
+        {
+            txt << std::endl;
+            txt << "================" << std::endl;
+            txt << "CODE OBJECT INFO" << std::endl;
+            txt << "================" << std::endl << std::endl;
+            txt << "This section includes the complete disassembly of all Code Object binaries that had at least one shader in flight during the crash."
+                << std::endl
+                << "You can use the Shader info ID handle to correlate what shader was part of what Code Object." << std::endl
+                << std::endl;
+            std::string complete_disassembly_text;
+            is_ok = enhanced_crash_info_serializer.GetCompleteDisassembly(user_config, complete_disassembly_text);
+
+            if (is_ok && !complete_disassembly_text.empty())
+            {
+                txt << complete_disassembly_text << std::endl;
+            }
+            else
+            {
+                txt << kStrNoShaderInfoAvailable << std::endl;
+            }
         }
     }
 
@@ -486,16 +518,28 @@ static void SerializeTextOutput(const RgdCrashDumpContents&     contents,
         txt << resource_info_string << std::endl;
     }
 
+    std::string input_info_str;
+    RgdSerializer::InputInfoToString(user_config,
+                                     contents,
+                                     enhanced_crash_info_serializer.GetDebugInfoFiles(),
+                                     input_info_str);
+
+    // The PDB file paths information to be printed in the Input Info Section is only available after ShaderInfo is generated.
+    // Merge the stringstream txts so that later generated input_info_str will be printed in the correct order.
+    std::stringstream rgd_summary_txt;
+    rgd_summary_txt << input_info_str;
+    rgd_summary_txt << txt.str();
+
     std::cout << "Page fault information analysis for the text representation completed." << std::endl;
 
     // Write the output to a file if required, otherwise print to console.
     if (!user_config.output_file_txt.empty())
     {
-        RgdUtils::WriteTextFile(user_config.output_file_txt, txt.str());
+        RgdUtils::WriteTextFile(user_config.output_file_txt, rgd_summary_txt.str());
     }
     else
     {
-        std::cout << txt.str();
+        std::cout << rgd_summary_txt.str();
     }
 }
 
@@ -512,7 +556,7 @@ static bool PerformCrashAnalysis(const Config& user_config)
     resource_serializer.InitializeWithTraceFile(user_config.crash_dump_file);
 
     RgdEnhancedCrashInfoSerializer enhanced_crash_info_serializer;
-    enhanced_crash_info_serializer.Initialize(contents, RgdParsingUtils::GetIsPageFault());
+    enhanced_crash_info_serializer.Initialize(user_config, contents, RgdParsingUtils::GetIsPageFault());
     
     if (ret && is_text_required)
     {
@@ -522,7 +566,6 @@ static bool PerformCrashAnalysis(const Config& user_config)
     {
         // JSON.
         RgdSerializerJson serializer_json;
-        serializer_json.SetInputInfo(user_config, contents.crashing_app_process_info, contents.system_info, contents.api_info);
 
         serializer_json.SetSystemInfoData(user_config, contents.system_info);
         serializer_json.SetDriverExperimentsInfoData(contents.driver_experiments_json);
@@ -534,15 +577,9 @@ static bool PerformCrashAnalysis(const Config& user_config)
 
         std::cout << "Generating JSON representation of the execution marker information..." << std::endl;
 
-        serializer_json.SetExecutionMarkerTree(user_config,
-            contents.umd_crash_data,
-            contents.cmd_buffer_mapping,
-            exec_marker_serializer);
+        serializer_json.SetExecutionMarkerTree(user_config, contents.umd_crash_data, contents.cmd_buffer_mapping, exec_marker_serializer);
 
-        serializer_json.SetExecutionMarkerSummaryList(user_config,
-            contents.umd_crash_data,
-            contents.cmd_buffer_mapping,
-            exec_marker_serializer);
+        serializer_json.SetExecutionMarkerSummaryList(user_config, contents.umd_crash_data, contents.cmd_buffer_mapping, exec_marker_serializer);
 
         std::cout << "JSON representation of the execution marker information generated successfully." << std::endl;
 
@@ -557,7 +594,7 @@ static bool PerformCrashAnalysis(const Config& user_config)
         // Retrieve indices of array contents.kmd_crash_data.events for all KMD DEBUG NOP events which tell us about the offending VAs.
         std::vector<size_t> debug_nop_events;
         std::vector<size_t> page_fault_events;
-        for(size_t i = 0, count = contents.kmd_crash_data.events.size(); i < count; ++i)
+        for (size_t i = 0, count = contents.kmd_crash_data.events.size(); i < count; ++i)
         {
             const RgdEventOccurrence& current_event = contents.kmd_crash_data.events[i];
             assert(current_event.rgd_event != nullptr);
@@ -585,8 +622,11 @@ static bool PerformCrashAnalysis(const Config& user_config)
             }
         }
 
-        // Set shader info.
-        serializer_json.SetShaderInfo(user_config, enhanced_crash_info_serializer);
+        if (contents.rgd_extended_info.is_hca_enabled)
+        {
+            // Set shader info.
+            serializer_json.SetShaderInfo(user_config, enhanced_crash_info_serializer);
+        }
 
         if (user_config.is_all_resources)
         {
@@ -596,8 +636,27 @@ static bool PerformCrashAnalysis(const Config& user_config)
 
         std::cout << "Page fault information analysis for the JSON representation completed." << std::endl;
 
+        // Set the input info.
+        serializer_json.SetInputInfo(user_config, contents, enhanced_crash_info_serializer.GetDebugInfoFiles());
+        
         // Save the JSON file.
         serializer_json.SaveToFile(user_config);
+    }
+
+    if (user_config.is_save_code_object_binaries)
+    {
+        // Save the code object binaries.
+        std::cout << "Saving Code Object binaries..." << std::endl;
+        std::string output_dir_for_co_binaries;
+        ret = RgdUtils::SaveCodeObjectBinaries(user_config.crash_dump_file, contents.code_objects_map, output_dir_for_co_binaries);
+        if (ret)
+        {
+            std::cout << "Code Object binaries successfully saved to " << output_dir_for_co_binaries << std::endl;
+        }
+        else
+        {
+            RgdUtils::PrintMessage("failed to save Code Object binaries.", RgdMessageType::kError, true);
+        }
     }
 
     return ret;
@@ -631,6 +690,10 @@ int main(int argc, char* argv[])
                 ("compact-json", "If specified, print compact unindented JSON output. The default is pretty formatted JSON output.", cxxopts::value<bool>(user_config.is_compact_json))
                 ("internal-barriers", "If specified, include internal barriers in the execution marker tree.", cxxopts::value<bool>(user_config.is_include_internal_barriers))
                 ("all-disassembly", "If specified, the output will include the complete disassembly of all shaders in the SHADER INFO section.", cxxopts::value<bool>(user_config.is_all_disassembly))
+                ("pdb-path", "If specified, provide one or more paths to search for shader debug info files. Multiple paths can be specified.", cxxopts::value<std::vector<std::string>>(user_config.pdb_dir))
+                ("full-source", "If specified, the output will include the full high level shader code if available.", cxxopts::value<bool>(user_config.is_full_source))
+                ("e,extended-output", "If specified, the text and JSON output will include more verbose information.", cxxopts::value<bool>(user_config.is_extended_output))
+                ("save-code-objects", "If specified, extracts all the Code Object binaries parsed from the input .rgd crash dump file.", cxxopts::value<bool>(user_config.is_save_code_object_binaries))
                 ;
 
             opts.add_options("internal")

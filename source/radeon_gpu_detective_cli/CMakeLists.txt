@@ -85,3 +85,17 @@ FOREACH (PLUGIN ${PLUGINS})
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${PLUGIN} ${PLUGIN_DST}
         )
 ENDFOREACH()
+
+# Copy the DXC binary to the output folder
+set(DXC_DST "$<TARGET_FILE_DIR:${PROJECT_NAME}>/utils/dx12/dxc/")
+IF (WIN32)
+    set(DXC_SRC "${PROJECT_SOURCE_DIR}/../../external/third_party/DXC/bin/x64/dxc.exe")
+ELSEIF (UNIX)
+    set(DXC_SRC "${PROJECT_SOURCE_DIR}/../../external/third_party/DXC/bin/dxc")
+ENDIF()
+
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${DXC_DST}
+    COMMAND ${CMAKE_COMMAND} -E echo "copying ${DXC_SRC} to ${DXC_DST}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${DXC_SRC} ${DXC_DST}
+)

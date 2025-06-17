@@ -718,6 +718,98 @@ bool RgdParsingUtils::ParseDriverOverridesChunk(rdf::ChunkFile& chunk_file, cons
     return ret;
 }
 
+bool RgdParsingUtils::ParseRgdExtendedInfoChunk(rdf::ChunkFile& chunk_file, const char* chunk_identifier, RgdExtendedInfo& extended_info)
+{
+    bool              ret = true;
+    const int64_t     kChunkCount = chunk_file.GetChunkCount(chunk_identifier);
+    const int64_t     kChunkIdx = 0;
+    const char*       kErrorMsg = "failed to extract RGD Extended Information";
+    std::stringstream error_txt;
+
+    // Parse RgdExtendedInfo chunk. It may not be present in older capture files.
+    if (kChunkCount > 0)
+    {
+        const uint32_t kChunkVersion = chunk_file.GetChunkVersion(chunk_identifier);
+        if (kChunkVersion <= kChunkMaxSupportedVersionRgdExtendedInfo)
+        {
+            // Only one RgdExtendedInfo chunk is expected so chunk index is set to 0 (first chunk).
+            assert(kChunkCount == 1);
+            uint64_t payload_size = chunk_file.GetChunkDataSize(chunk_identifier, kChunkIdx);
+            if (payload_size > 0)
+            {
+                std::string extended_info_json_data(payload_size, '\0');
+
+                // Read the RgdExtendedInfo chunk payload data.
+                chunk_file.ReadChunkDataToBuffer(chunk_identifier, kChunkIdx, extended_info_json_data.data());
+                nlohmann::json json_doc;
+                try
+                {
+                    json_doc = nlohmann::json::parse(extended_info_json_data.data());
+                    
+                    // Extract data from JSON into the RgdExtendedInfo structure
+                    if (json_doc.contains(kJsonElemHcaEnabled))
+                    {
+                        extended_info.is_hca_enabled = json_doc[kJsonElemHcaEnabled].get<bool>();
+                    }
+                    
+                    if (json_doc.contains(kJsonElemHcaFlags))
+                    {
+                        auto& hca_flags = json_doc[kJsonElemHcaFlags];
+                        
+                        if (hca_flags.contains(kJsonElemCaptureWaveData))
+                        {
+                            extended_info.is_capture_wave_data = hca_flags[kJsonElemCaptureWaveData].get<bool>();
+                        }
+                        
+                        if (hca_flags.contains(kJsonElemEnableSingleAluOp))
+                        {
+                            extended_info.is_enable_single_alu_op = hca_flags[kJsonElemEnableSingleAluOp].get<bool>();
+                        }
+                        
+                        if (hca_flags.contains(kJsonElemEnableSingleMemOp))
+                        {
+                            extended_info.is_enable_single_memory_op = hca_flags[kJsonElemEnableSingleMemOp].get<bool>();
+                        }
+                    }
+                    
+                    if (json_doc.contains(kJsonElemPdbSearchPaths))
+                    {
+                        extended_info.pdb_search_paths.clear();
+                        for (const auto& path : json_doc[kJsonElemPdbSearchPaths])
+                        {
+                            extended_info.pdb_search_paths.push_back(path.get<std::string>());
+                        }
+                    }
+                }
+                catch (const std::exception& e)
+                {
+                    error_txt << kErrorMsg << " (" << e.what() << ").";
+                    RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+                }
+            }
+            else
+            {
+                error_txt << kErrorMsg << " (invalid chunk payload size [" << kChunkIdRgdExtendedInfo << "]).";
+                RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+            }
+        }
+        else
+        {
+            error_txt << kErrorMsg << " (unsupported chunk version: " << kChunkVersion << " [" << kChunkIdRgdExtendedInfo << "]).";
+            RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+        }
+    }
+    else
+    {
+        error_txt << kErrorMsg << " (Extended Information missing [" << kChunkIdRgdExtendedInfo << "]).";
+        RgdUtils::PrintMessage(error_txt.str().c_str(), RgdMessageType::kError, true);
+    }
+    
+    ret = error_txt.str().empty();
+
+    return ret;
+}
+
 bool RgdParsingUtils::ParseCodeObjectChunk(rdf::ChunkFile&                              chunk_file,
                                            const char*                                  chunk_identifier,
                                            std::map<Rgd128bitHash, CodeObject>& code_objects_map)
@@ -737,13 +829,13 @@ bool RgdParsingUtils::ParseCodeObjectChunk(rdf::ChunkFile&                      
             {
                 CodeObject code_object;
                 chunk_file.ReadChunkHeaderToBuffer(chunk_identifier, chunk_idx, &code_object.chunk_header);
-                //assert(code_object.chunk_header.code_object_hash == 0);
+                assert(!Rgd128bitHashIsZero(code_object.chunk_header.code_object_hash));
                 uint64_t payload_size = chunk_file.GetChunkDataSize(chunk_identifier, chunk_idx);
                 if (payload_size > 0)
                 {
                     code_object.chunk_payload.resize(payload_size, 0);
                     chunk_file.ReadChunkDataToBuffer(chunk_identifier, chunk_idx, code_object.chunk_payload.data());
-                    //assert(code_object_map.find(code_object.chunk_header.code_object_hash) == code_object_map.end());
+                    assert(code_objects_map.find(code_object.chunk_header.code_object_hash) == code_objects_map.end());
                     code_objects_map[code_object.chunk_header.code_object_hash] = std::move(code_object);
                 }
                 else

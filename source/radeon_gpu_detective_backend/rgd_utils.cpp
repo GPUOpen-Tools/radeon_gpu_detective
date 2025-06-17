@@ -17,6 +17,7 @@
 #include <sys/stat.h>
 #include <locale>
 #include <algorithm>
+#include <filesystem>
 
 bool RgdUtils::IsFileExists(const std::string& file_name)
 {
@@ -68,13 +69,13 @@ void RgdUtils::PrintMessage(const char* msg, RgdMessageType msg_type, bool is_ve
         switch (msg_type)
         {
         case RgdMessageType::kInfo:
-            std::cout << "INFO: " << msg << std::endl;
+            std::cout << kRgdInfoMessage << msg << std::endl;
             break;
         case RgdMessageType::kWarning:
-            std::cout << "WARNING: " << msg << std::endl;
+            std::cout << kRgdWarningMessage << msg << std::endl;
             break;
         case RgdMessageType::kError:
-            std::cerr << "ERROR: " << msg << std::endl;
+            std::cerr << kRgdErrorMessage << msg << std::endl;
             break;
         }
     }
@@ -274,4 +275,100 @@ std::string RgdUtils::GetAlphaNumericId(std::string id_prefix, uint64_t id)
     assert(!id_prefix.empty());
     ret_txt << id_prefix << id;
     return ret_txt.str();
+}
+
+bool RgdUtils::SaveCodeObjectBinaries(const std::string& file_name, const std::map<Rgd128bitHash, CodeObject>& code_objects_map, 
+                                      std::string& output_dir_str)
+{
+    bool ret = true;
+    
+    try
+    {
+        // Create the output directory based on the input file path.
+        std::filesystem::path output_dir = std::filesystem::path(file_name).replace_extension("");
+        output_dir_str = output_dir.string();
+        if (std::filesystem::create_directory(output_dir))
+        {
+            for (const auto& [hash, code_object] : code_objects_map)
+            {
+                try
+                {
+                    // Create the output file name based on the code object hash.
+                    std::stringstream file_path;
+                    file_path << output_dir.string() << "/0x" << std::hex << hash.high << hash.low << ".bin";
+                    std::string output_file_path = file_path.str();
+
+                    // Write the code object binary to the file.
+                    std::ofstream output_file(output_file_path, std::ios::binary);
+                    if (output_file.is_open())
+                    {
+                        try
+                        {
+                            output_file.write(reinterpret_cast<const char*>(code_object.chunk_payload.data()), code_object.chunk_payload.size());
+                            if (output_file.bad())
+                            {
+                                std::stringstream error_msg;
+                                error_msg << "failed to write data to file: " << output_file_path;
+                                RgdUtils::PrintMessage(error_msg.str().c_str(), RgdMessageType::kError, true);
+                                ret = false;
+                            }
+                            output_file.close();
+                        }
+                        catch (const std::exception& e)
+                        {
+                            std::stringstream error_msg;
+                            error_msg << "exception while writing to file: " << output_file_path << " (" << e.what() << ")";
+                            RgdUtils::PrintMessage(error_msg.str().c_str(), RgdMessageType::kError, true);
+                            ret = false;
+                        }
+                    }
+                    else
+                    {
+                        std::stringstream error_msg;
+                        error_msg << "failed to open file for writing: " << output_file_path;
+                        RgdUtils::PrintMessage(error_msg.str().c_str(), RgdMessageType::kError, true);
+                        ret = false;
+                    }
+                }
+                catch (const std::exception& e)
+                {
+                    std::stringstream error_msg;
+                    error_msg << "exception processing code object: 0x" << std::hex << hash.high << hash.low << " (" << e.what() << ")";
+                    RgdUtils::PrintMessage(error_msg.str().c_str(), RgdMessageType::kError, true);
+                    ret = false;
+                    // Continue with next code object
+                }
+            }
+        }
+        else
+        {
+            std::stringstream error_msg;
+            error_msg << "failed to create output directory: " << output_dir.string();
+            RgdUtils::PrintMessage(error_msg.str().c_str(), RgdMessageType::kError, true);
+            ret = false;
+        }
+    }
+    catch (const std::filesystem::filesystem_error& e)
+    {
+        std::stringstream error_msg;
+        error_msg << "filesystem error: " << e.what() << " (code: " << e.code() << ")";
+        RgdUtils::PrintMessage(error_msg.str().c_str(), RgdMessageType::kError, true);
+        ret = false;
+    }
+    catch (const std::exception& e)
+    {
+        std::stringstream error_msg;
+        error_msg << "unexpected exception: " << e.what();
+        RgdUtils::PrintMessage(error_msg.str().c_str(), RgdMessageType::kError, true);
+        ret = false;
+    }
+    catch (...)
+    {
+        std::stringstream error_msg;
+        error_msg << "unknown exception occurred while saving code object binaries";
+        RgdUtils::PrintMessage(error_msg.str().c_str(), RgdMessageType::kError, true);
+        ret = false;
+    }
+
+    return ret;
 }

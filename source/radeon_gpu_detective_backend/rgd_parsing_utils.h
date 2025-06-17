@@ -50,6 +50,9 @@ public:
     // Parse a 'DriverOverrides' chunk from the given chunk file.
     static bool ParseDriverOverridesChunk(rdf::ChunkFile& chunk_file, const char* chunk_identifier, nlohmann::json& driver_experiments_json);
 
+    // Parse a 'RgdExtendedInfo' chunk from the given chunk file.
+    static bool ParseRgdExtendedInfoChunk(rdf::ChunkFile& chunk_file, const char* chunk_identifier, RgdExtendedInfo& rgd_extended_info);
+
     // Parse a 'CodeObject' chunk from the given chunk file.
     static bool ParseCodeObjectChunk(rdf::ChunkFile& chunk_file, const char* chunk_identifier, std::map<Rgd128bitHash, CodeObject>& code_objects_map);
 

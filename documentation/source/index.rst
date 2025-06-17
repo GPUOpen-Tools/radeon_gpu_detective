@@ -18,7 +18,7 @@ This guide will get you up and running with RGD, a tool for post-mortem GPU cras
 .. note::
    Review these requirements to make sure that this tool is relevant for your use case:
    
-   * RGD v1.4 supports **DirectX12** and **Vulkan**.
+   * RGD v1.5 supports **DirectX12** and **Vulkan**.
    * **Windows 10 or 11**.
    * **RDNA™2** (RX 6000 series), **RDNA™3** (RX 7000 series) or **RDNA™ 4** (RX 9000 series) card.
    * Must **TDR** (we don't catch it if there is no TDR).
@@ -37,7 +37,11 @@ Capture GPU crash dump
 
 .. image:: images/enable-crash-analysis.png
 
-4. Under the "Crash Analysis" tab, make sure that the Text checkbox is checked for the automatic crash summary generation. Please note, Hardware Crash Analysis feature is enabled by default. For more information about the Hardware Crash Analysis feature, please see the RGD :doc:`help_manual`.
+4. Under the "Crash Analysis" tab, make sure that the Text checkbox is checked for the automatic crash summary generation.
+
+   * Please note, Hardware Crash Analysis feature is enabled by default.
+   * Optionally, provide PDB search paths in the "DXC shader PDB Search Paths" field to enable high-level shader details in the crash analysis report.
+   * For more information about the Hardware Crash Analysis and Debug Info features, please see the RGD :doc:`help_manual`.
 
 .. image:: images/select-text-output-format.png 
 
@@ -92,17 +96,17 @@ This will open the .txt crash analysis file which includes information that can 
      ├─[X] "GltfPbrPass::DrawBatchList"
      ├─[>] "DownSamplePS"
      │  ├─[X] ----------Barrier----------
-     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Vertex}>
-     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Vertex}>
-     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Vertex}>
-     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Vertex}>
-     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Vertex}>
+     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: ShaderInfoID1, API stages: Vertex, API PSO hash = 0xc192105aa67f7e88>
+     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: ShaderInfoID1, API stages: Vertex, API PSO hash = 0xc192105aa67f7e88>
+     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: ShaderInfoID1, API stages: Vertex, API PSO hash = 0xc192105aa67f7e88>
+     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: ShaderInfoID1, API stages: Vertex, API PSO hash = 0xc192105aa67f7e88>
+     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: ShaderInfoID1, API stages: Vertex, API PSO hash = 0xc192105aa67f7e88>
      │  └─[>] ----------Barrier----------
      ├─[>] "Bloom"
      │  ├─[>] "BlurPS"
      │  │  ├─[>] ----------Barrier----------
-     │  │  ├─[#] Draw(VertexCount=3, InstanceCount=1) <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID2}, API PSO hash = 0xe1b221d7ee5e85c9, API stages: {Vertex}>
-     │  │  ├─[#] Draw(VertexCount=3, InstanceCount=1) <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID2}, API PSO hash = 0xe1b221d7ee5e85c9, API stages: {Vertex}>
+     │  │  ├─[#] Draw(VertexCount=3, InstanceCount=1) <-- has a correlated running wave <SHADER INFO section IDs: ShaderInfoID2, API stages: Vertex, API PSO hash = 0xe1b221d7ee5e85c9>
+     │  │  ├─[#] Draw(VertexCount=3, InstanceCount=1) <-- has a correlated running wave <SHADER INFO section IDs: ShaderInfoID2, API stages: Vertex, API PSO hash = 0xe1b221d7ee5e85c9>
      │  │  └─[ ] ----------Barrier----------
      │  ├─[ ] ----------Barrier----------
      │  ├─[ ] Draw(VertexCount=3, InstanceCount=1)

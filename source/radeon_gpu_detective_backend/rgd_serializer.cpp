@@ -159,7 +159,7 @@ bool RgdSerializer::ToString(const Config& user_config, const system_info_utils:
     txt << "===========" << std::endl;
     txt << "Driver packaging version: " << system_info.driver.packaging_version << std::endl;
     txt << "Driver software version: " << system_info.driver.software_version << std::endl;
-    txt << "Dev driver version: " << system_info.devdriver.tag << std::endl;
+    txt << "Dev driver version: " << (system_info.devdriver.tag.empty() ? kStrNotAvailable : system_info.devdriver.tag) << std::endl;
     txt << GetDriverExperimentsString(driver_experiments_json);
     txt << std::endl;
 
@@ -270,16 +270,15 @@ bool RgdSerializer::ToString(const Config& user_config, const system_info_utils:
 }
 
 void RgdSerializer::InputInfoToString(const Config&                        user_config,
-                                      const TraceProcessInfo&              process_info,
-                                      const system_info_utils::SystemInfo& system_info,
-                                      const TraceChunkApiInfo& api_info,
+                                      const RgdCrashDumpContents& contents,
+                                      const std::vector<std::string>&            debug_info_files,
                                       std::string& input_info_str)
 {
     std::stringstream txt;
 
     txt << "===================" << std::endl;
     txt << "CRASH ANALYSIS FILE" << std::endl;
-    txt << "===================" << std::endl << std::endl;
+    txt << "===================" << std::endl;
 
     txt << "Crash analysis file format version: 1.0" << std::endl;
     std::string rgd_version_string;
@@ -287,9 +286,63 @@ void RgdSerializer::InputInfoToString(const Config&                        user_
     txt << "RGD CLI version used: " << rgd_version_string << std::endl;
     txt << "Input crash dump file creation time: " << RgdUtils::GetFileCreationTime(user_config.crash_dump_file) << std::endl;
     txt << "Input crash dump file name: " << user_config.crash_dump_file << std::endl;
-    txt << "Crashing executable full path: " << (process_info.process_path.empty() ? kStrNotAvailable : process_info.process_path)
-        << " (PID: " << process_info.process_id << ")" << std::endl;
-    txt << "API: " << RgdUtils::GetApiString(api_info.apiType) << std::endl;
+    txt << "Crashing executable full path: "
+        << (contents.crashing_app_process_info.process_path.empty() ? kStrNotAvailable : contents.crashing_app_process_info.process_path)
+        << " (PID: " << contents.crashing_app_process_info.process_id << ")" << std::endl;
+    txt << "API: " << RgdUtils::GetApiString(contents.api_info.apiType) << std::endl;
+    txt << "PDB files used: ";
+    
+    if (contents.api_info.apiType != TraceApiType::DIRECTX_12)
+    {
+        txt << kStrNotAvailable << std::endl;
+    }
+    else if(debug_info_files.empty())
+    {
+        txt << "no PDB files found." << std::endl;
+    }
+    else
+    {
+        
+        for (const auto& debug_info_file : debug_info_files)
+        {
+            txt << debug_info_file;
+            if(debug_info_file != debug_info_files.back())
+            {
+                txt << ", ";
+            }
+        }
+        txt << std::endl;
+    }
+    if (user_config.is_extended_output)
+    { 
+        txt << "PDB search paths (.rgd file):";
+        if (contents.rgd_extended_info.pdb_search_paths.empty())
+        {
+            txt << " " << kStrNone;
+        }
+        else
+        {
+            for (const std::string& path : contents.rgd_extended_info.pdb_search_paths)
+            {
+                txt << std::endl << "\t" << path;
+            }
+        }
+        txt << std::endl;
+        txt << "PDB search paths (CLI):";
+        if (user_config.pdb_dir.empty())
+        {
+            txt << " " << kStrNone;
+        }
+        else
+        {
+            for (const std::string& path : user_config.pdb_dir)
+            {
+                txt << std::endl << "\t" << path;
+            }
+        }
+        txt << std::endl;
+    }
+    txt << "Hardware Crash Analysis: " << (contents.rgd_extended_info.is_hca_enabled ? kStrEnabled : kStrDisabled) << std::endl;
     txt << std::endl;
 
     input_info_str = txt.str();
@@ -412,6 +465,13 @@ std::string RgdSerializer::EventExecMarkerInfoToString(const CrashAnalysisExecut
         ret << offset_tabs << "Pipeline stalls: " << barrier_end->pipelineStalls << std::endl;
         ret << offset_tabs << "Layout transition: " << barrier_end->layoutTransitions << std::endl;
         ret << offset_tabs << "Caches: " << barrier_end->caches;
+    }
+        break;
+    case ExecutionMarkerInfoType::NestedCmdBuffer:
+    {
+        NestedCmdBufferInfo* nested_cmd_buffer = reinterpret_cast<NestedCmdBufferInfo*>(marker_info + sizeof(ExecutionMarkerInfoHeader));
+        ret << offset_tabs << "Info type: " << "Nested command buffer" << std::endl;
+        ret << offset_tabs << "Command buffer ID: 0x" << std::hex << nested_cmd_buffer->nestedCmdBufferId << std::dec;
     }
         break;
     default:

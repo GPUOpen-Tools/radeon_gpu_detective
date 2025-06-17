@@ -47,6 +47,7 @@ static const char* kJsonElemPageFaultSummary = "page_fault_summary";
 // String not available.
 static const char* kStrNotAvailable = "N/A";
 static const char* kStrUnknown      = "Unknown";
+static const char* kStrNone         = "None";
 
 // Heap type strings.
 static const char* kStrHeapTypeLocal = "Local (GPU memory, CPU-visible)";
@@ -83,6 +84,9 @@ static const uint32_t kChunkMaxSupportedVersionCOLoadEvent = 3;
 static const char* kChunkIdPsoCorrelation = "PsoCorrelation";
 static const uint32_t kChunkMaxSupportedVersionPsoCorrelation = 3;
 
+static const char* kChunkIdRgdExtendedInfo = "RgdExtendedInfo";
+static const uint32_t kChunkMaxSupportedVersionRgdExtendedInfo = 1;
+
 // DriverOverrides chunk JSON element name constants.
 static const char* kJsonElemComponentsDriverOverridesChunk          = "Components";
 static const char* kJsonElemComponentDriverOverridesChunk           = "Component";
@@ -96,24 +100,46 @@ static const char* kJsonElemIsDriverExperimentsDriverOverridesChunk = "IsDriverE
 static const char* kErrorMsgInvalidDriverOverridesJson              = "invalid DriverOverrides JSON";
 static const char* kErrorMsgFailedToParseDriverExperimentsInfo      = "failed to parse Driver Experiments info";
 
+// RgdExtendedInfo chunk JSON element name constants.
+static const char* kJsonElemHcaEnabled        = "hcaEnabled";
+static const char* kJsonElemHcaFlags          = "hcaFlags";
+static const char* kJsonElemCaptureWaveData   = "captureWaveData";
+static const char* kJsonElemEnableSingleAluOp = "enableSingleAluOp";
+static const char* kJsonElemEnableSingleMemOp = "enableSingleMemOp";
+static const char* kJsonElemPdbSearchPaths    = "pdbSearchPaths";
+static const char* kErrorMsgInvalidRgdExtendedInfoJson = "invalid RgdExtendedInfo JSON";
+
 // Enhanced Crash Info JSON element name constants.
-static const char* kJsonElemShaders                 = "shaders";
-static const char* kJsonElemShaderInfo              = "shader_info";
-static const char* kJsonElemShaderInfoId            = "shader_info_id";
-static const char* kJsonElemApiPsoHash              = "api_pso_hash";
-static const char* kJsonElemApiShaderHashHi         = "api_shader_hash_hi";
-static const char* kJsonElemApiShaderHashLo         = "api_shader_hash_lo";
-static const char* kJsonElemApiStage                = "api_stage";
-static const char* kJsonElemDisassembly             = "disassembly";
-static const char* kJsonElemInstructionOffset       = "instruction_offset";
-static const char* kJsonElemInstr                   = "instr";
-static const char* kJsonElemInstructionsDisassembly = "instructions_disassembly";
-static const char* kJsonElemWaveCount               = "wave_count";
-static const char* kJsonElemInstructionsHidden      = "instructions_hidden";
+static const char* kJsonElemShaders                     = "shaders";
+static const char* kJsonElemShaderInfo                  = "shader_info";
+static const char* kJsonElemShaderInfoId                = "shader_info_id";
+static const char* kJsonElemShaderInfoIds               = "shader_info_ids";
+static const char* kJsonElemSourceFileName              = "source_file_name";
+static const char* kJsonElemEntryPointName              = "source_entry_point_name";
+static const char* kJsonElemSourceCode                  = "high_level_source_code";
+static const char* kJsonElemShaderIoAndResourceBindings = "shader_io_and_resource_bindings";
+static const char* kJsonElemLinesHidden                 = "lines_hidden";
+static const char* KJsonElemSourceLine                  = "source_line";
+static const char* kJsonElemApiPsoHash                  = "api_pso_hash";
+static const char* kJsonElemApiShaderHashHi             = "api_shader_hash_hi";
+static const char* kJsonElemApiShaderHashLo             = "api_shader_hash_lo";
+static const char* kJsonElemApiStage                    = "api_stage";
+static const char* kJsonElemDisassembly                 = "disassembly";
+static const char* kJsonElemInstructionOffset           = "instruction_offset";
+static const char* kJsonElemInstr                       = "instr";
+static const char* kJsonElemInstructionsDisassembly     = "instructions_disassembly";
+static const char* kJsonElemWaveCount                   = "wave_count";
+static const char* kJsonElemInstructionsHidden          = "instructions_hidden";
 
 // ID prefixes
 static const char* kStrPrefixShaderInfoId = "ShaderInfoID";
 static const char* kStrPrefixCodeObjectId = "CodeObjectID";
+
+// Execute nested command buffers string.
+static const char* kStrExecuteNestedCmdBuffers = "ExecuteNestedCmdBuffers";
+
+static const char* kStrEnabled = "Enabled";
+static const char* kStrDisabled = "Disabled";
 
 // Represents the execution status of an execution marker.
 // A marker can be in a one of 3 states:
@@ -138,6 +164,9 @@ struct Config
 
     // Full path to the analysis output json file.
     std::string output_file_json;
+
+    // Full directory paths to the pdb files.
+    std::vector<std::string> pdb_dir;
 
     // True for higher level of details for console output.
     bool is_verbose = false;
@@ -174,6 +203,15 @@ struct Config
 
     // Include full code object disassembly.
     bool is_all_disassembly = false;
+
+    // Include full high level shader code if available.
+    bool is_full_source = false;
+
+    // Include more detailed information in text and JSON output.
+    bool is_extended_output = false;
+
+    // Save code object binaries from the crash dump file.
+    bool is_save_code_object_binaries = false;
 };
 
 // Stores time information about the crash analysis session.
@@ -239,6 +277,15 @@ struct CodeObject
     std::vector<std::uint8_t> chunk_payload;
 };
 
+struct RgdExtendedInfo
+{
+    std::vector<std::string> pdb_search_paths;
+    bool                     is_hca_enabled{false};
+    bool                     is_capture_wave_data{false};
+    bool                     is_enable_single_alu_op{false};
+    bool                     is_enable_single_memory_op{false};
+};
+
 // Holds the parsed contents of a crash dump RDF file.
 // For now RMT is not included as it is being parsed separately through a dedicated API.
 struct RgdCrashDumpContents
@@ -252,8 +299,11 @@ struct RgdCrashDumpContents
     // Mapping between command buffer ID and the indices for umd_crash_data.events array of its relevant execution marker events.
     std::unordered_map<uint64_t, std::vector<size_t>> cmd_buffer_mapping;
 
-    // Driver Experiments JSON
+    // Driver Experiments JSON.
     nlohmann::json driver_experiments_json;
+
+    // Rgd Extended Info.
+    RgdExtendedInfo rgd_extended_info;
 
     // CodeObject Database.
     std::map<Rgd128bitHash, CodeObject> code_objects_map;
@@ -265,11 +315,13 @@ struct RgdCrashDumpContents
     std::vector<RgdPsoCorrelation> pso_correlations;
 };
 
-// Holds the information about the crashing shader for correlation with the execution markers nodes.
+// Holds the information about the in-flight shader for correlation with the execution markers nodes.
 struct RgdCrashingShaderInfo
 {
     std::vector<std::string> crashing_shader_ids;
     std::vector<std::string> api_stages;
+    std::vector<std::string> source_file_names;
+    std::vector<std::string> source_entry_point_names;
 };
 
 struct WaveInfoRegisters

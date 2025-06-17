@@ -15,6 +15,8 @@ import tarfile
 import platform
 import argparse
 import stat
+import shutil
+import errno
 
 
 # Check for the python 3.x name and import it as the 2.x name
@@ -41,6 +43,16 @@ from dependency_map import git_mapping
 from dependency_map import url_mapping_win
 from dependency_map import url_mapping_linux
 
+# Delete files and directory when update is requested
+def handle_remove_readonly(func, path, exc):
+    excvalue = exc[1]
+    if func in (os.rmdir, os.remove, os.unlink) and excvalue.errno == errno.EACCES:
+        # Set the permission to 0777 - allowing the script to remove the file or directory even if it was previously read-only.
+        os.chmod(path, stat.S_IRWXU | stat.S_IRWXG | stat.S_IRWXO)
+        func(path)
+    else:
+        raise
+
 # Download a zip or tgz file from the specified URL and unzip into the directory defined by destination.
 # The destination directory will be created if it doesn't exist
 # if the 'update' parameter is true then the existing file and output directory will be deleted and re-created
@@ -51,7 +63,11 @@ def download_url_dependencies(url_mapping, update, retry_count = 10):
         tmp_path = os.path.join(script_root, url_mapping[url])
         # clean up path, collapsing any ../ and converting / to \ for Windows
         target_path = os.path.normpath(tmp_path)
-        # TODO if update is defined - delete file and directory if they exist
+        
+        # if update is defined - delete files and directory if they exist
+        if update and os.path.exists(target_path):
+            shutil.rmtree(target_path, onerror=handle_remove_readonly)
+
         # make target directory if it doesn't exist
         if not os.path.isdir(target_path):
             os.makedirs(target_path)
@@ -79,7 +95,7 @@ def download_url_dependencies(url_mapping, update, retry_count = 10):
                 # if file extension is .zip then unzip it
                 log_print("Extracting in " + target_path)
                 zipfile.ZipFile(zip_path).extractall(target_path)
-            elif os.path.splitext(zip_path)[1] == ".tgz":
+            elif os.path.splitext(zip_path)[1] == ".tgz" or os.path.splitext(zip_path)[1] == ".gz":
                 # if file extension is .tgz then untar it
                 log_print("Extracting in " + target_path)
                 tarfile.open(zip_path).extractall(target_path)
@@ -97,6 +113,11 @@ def update_git_dependencies(git_mapping, update):
         reqd_commit = git_mapping[git_repo][1]
 
         do_checkout = False
+
+        if update and os.path.exists(path):
+            # directory exists and update requested - delete existing files and directory
+            shutil.rmtree(path, onerror=handle_remove_readonly)
+
         if not os.path.isdir(path):
             # directory doesn't exist - clone from git
             log_print("Directory %s does not exist, using 'git clone' to get latest from %s" % (path, git_repo))
@@ -106,16 +127,6 @@ def update_git_dependencies(git_mapping, update):
                 do_checkout = True
             else:
                 log_print("git clone failed with return code: %d" % p.returncode)
-                return False
-        elif update == True:
-            # directory exists and update requested - get latest from git
-            log_print("Directory %s exists, using 'git fetch --tags -f' to get latest from %s" % (path, git_repo))
-            p = subprocess.Popen((["git", "fetch", "--tags", "-f"]), cwd=path, stderr=subprocess.STDOUT)
-            p.wait()
-            if(p.returncode == 0):
-                do_checkout = True
-            else:
-                log_print("git fetch failed with return code: %d" % p.returncode)
                 return False
         else:
             # Directory exists and update not requested

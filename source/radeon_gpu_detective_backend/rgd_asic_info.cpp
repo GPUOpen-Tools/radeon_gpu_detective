@@ -14,8 +14,9 @@ namespace ecitrace
     static constexpr uint32_t kNavi2XMinimumRevision = 0x28;
 
     static constexpr uint32_t kFamilyNavi3     = 0x91;
-    
+
     static constexpr uint32_t kFamilyNavi4     = 0x98;
+    static constexpr uint32_t kFamilyStrix1    = 0x96;
 
     GpuSeries ecitrace::AsicInfo::GetGpuSeries(const uint32_t asic_family, const uint32_t asic_e_rev)
     {
@@ -31,6 +32,8 @@ namespace ecitrace
             return GpuSeries::kNavi3;
         case kFamilyNavi4:
             return GpuSeries::kNavi4;
+        case kFamilyStrix1:
+            return GpuSeries::kStrix1;
 
         default:
             return GpuSeries::kUnknown;

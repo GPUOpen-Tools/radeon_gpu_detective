@@ -68,6 +68,9 @@ This section is titled ``CRASH ANALYSIS FILE`` and contains information about th
 * **Crash analysis file format version**: schema version of the current file.
 * **Crashing process ID**: the process ID of the crashing application.
 * **Crashing executable full path**: full path to the crashing application executable.
+* **API**: API (DirectX 12 or Vulkan) that was used by the crashing application.
+* **PDB files used [DX12 only]**: the list of PDB files that were used to generate the crash analysis summary report.
+* **Hardware Crash Analysis**: whether the Hardware Crash Analysis feature was enabled when the crash dump was captured.
 
 System information
 """"""""""""""""""
@@ -282,46 +285,111 @@ RGD v1.4 brings a powerful new feature: Hardware Crash Analysis. When enabled, R
 
 With Hardware Crash Analysis, a new execution marker state ``shader in flight`` is added. RGD correlates the wavefronts in flight to the execution markers and marks nodes that had a running wavefront during the crash and mark the node with ``[#]`` symbol.
 
-Here is an example execution marker tree::
+Below is an example execution marker tree for a DX12 crashing application with Hardware Crash Analysis enabled and shader DXC debug information::
 
-    Command Buffer ID: 0x617 (Queue type: Direct)
-    =============================================
-    [>] "Frame 362 CL0"
-     ├─[X] "Depth + Normal + Motion Vector PrePass"
-     ├─[X] "Shadow Cascade Pass"
-     ├─[X] "TLAS Build"
-     ├─[X] "Classify tiles"
-     ├─[X] "Trace shadows"
-     ├─[X] ----------Barrier----------
-     ├─[X] "Denoise shadows"
-     ├─[X] "GltfPbrPass::DrawBatchList"
-     ├─[X] "Skydome Proc"
-     ├─[X] "GltfPbrPass::DrawBatchList"
-     ├─[>] "DownSamplePS"
-     │  ├─[X] ----------Barrier----------
-     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Pixel}>
-     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Pixel}>
-     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Pixel}>
-     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Pixel}>
-     │  ├─[#] Draw(VertexCount=3, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Pixel}>
-     │  └─[>] ----------Barrier----------
-     ├─[>] "Bloom"
-     │  ├─[>] "BlurPS"
-     │  │  ├─[>] ----------Barrier----------
-     │  │  ├─[#] Draw(VertexCount=3, InstanceCount=1) <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Pixel}>
-     │  │  ├─[#] Draw(VertexCount=3, InstanceCount=1) <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1}, API PSO hash = 0xc192105aa67f7e88, API stages: {Pixel}>
-     │  │  └─[ ] ----------Barrier----------
-     │  ├─[ ] ----------Barrier----------
-     │  ├─[ ] Draw(VertexCount=3, InstanceCount=1)
-     │  ├─[ ] Draw(VertexCount=3, InstanceCount=1)
-     │  ├─[ ] "BlurPS"
-     │  ├─[ ] Draw(VertexCount=3, InstanceCount=1)
-     │  └─[ ] ----------Barrier----------
-     └─[ ] "Indirect draw simple"
+    Command Buffer ID: 0x10cc (Queue type: Direct)
+    ==============================================
+    [>] "Frame 1060 CL0"
+    ├─[X] ----------Barrier----------
+    ├─[X] "Depth + Normal + Motion Vector PrePass"
+    ├─[X] ----------Barrier----------
+    ├─[X] ----------Barrier----------
+    ├─[X] "Shadow Cascade Pass"
+    ├─[X] "TLAS Build"
+    ├─[X] ----------Barrier----------
+    ├─[X] "Classify tiles"
+    ├─[X] "Trace shadows"
+    ├─[X] ----------Barrier----------
+    ├─[X] ----------Barrier----------
+    ├─[X] "Denoise shadows"
+    ├─[X] ----------Barrier----------
+    ├─[X] ----------Barrier----------
+    ├─[X] "GltfPbrPass::DrawBatchList"
+    ├─[X] "Skydome Proc"
+    ├─[X] "GltfPbrPass::DrawBatchList"
+    ├─[X] ----------Barrier----------
+    ├─[>] "DownSamplePS"
+    │  ├─[X] ----------Barrier----------
+    │  ├─[#] Draw(VertexCount=3, InstanceCount=1)   <-- has a correlated running wave <SHADER INFO section ID: ShaderInfoID1, Entry point: mainPS, Source file: DownSamplePS.hlsl, API stage: Pixel, API PSO hash: 0xe3204f6b7ea39e98>
+    │  ├─[>] ----------Barrier----------
+    │  ├─[>] ----------Barrier----------
+    │  ├─[#] Draw(VertexCount=3, InstanceCount=1)   <-- has a correlated running wave <SHADER INFO section ID: ShaderInfoID1, Entry point: mainPS, Source file: DownSamplePS.hlsl, API stage: Pixel, API PSO hash: 0xe3204f6b7ea39e98>
+    │  ├─[>] ----------Barrier----------
+    │  ├─[>] ----------Barrier----------
+    │  ├─[#] Draw(VertexCount=3, InstanceCount=1)   <-- has a correlated running wave <SHADER INFO section ID: ShaderInfoID1, Entry point: mainPS, Source file: DownSamplePS.hlsl, API stage: Pixel, API PSO hash: 0xe3204f6b7ea39e98>
+    │  ├─[>] ----------Barrier----------
+    │  ├─[>] ----------Barrier----------
+    │  ├─[#] Draw(VertexCount=3, InstanceCount=1)   <-- has a correlated running wave <SHADER INFO section ID: ShaderInfoID1, Entry point: mainPS, Source file: DownSamplePS.hlsl, API stage: Pixel, API PSO hash: 0xe3204f6b7ea39e98>
+    │  ├─[>] ----------Barrier----------
+    │  ├─[>] ----------Barrier----------
+    │  ├─[#] Draw(VertexCount=3, InstanceCount=1)   <-- has a correlated running wave <SHADER INFO section ID: ShaderInfoID1, Entry point: mainPS, Source file: DownSamplePS.hlsl, API stage: Pixel, API PSO hash: 0xe3204f6b7ea39e98>
+    │  └─[>] ----------Barrier----------
+    ├─[>] "Bloom"
+    │  ├─[>] "BlurPS"
+    │  │  ├─[>] ----------Barrier----------
+    │  │  ├─[>] Draw(VertexCount=3, InstanceCount=1)
+    │  │  ├─[ ] ----------Barrier----------
+    │  │  ├─[ ] Draw(VertexCount=3, InstanceCount=1)
+    │  │  └─[ ] ----------Barrier----------
+    │  ├─[ ] ----------Barrier----------
+    │  ├─[ ] Draw(VertexCount=3, InstanceCount=1)
+    │  ├─[ ] ----------Barrier----------
+    │  ├─[ ] "BlurPS"
+    │  ├─[ ] ----------Barrier----------
+    │  ├─[ ] Draw(VertexCount=3, InstanceCount=1)
+    │  ├─[ ] ----------Barrier----------
+    │  ├─[ ] "BlurPS"
+    │  ├─[ ] ----------Barrier----------
+    │  ├─[ ] Draw(VertexCount=3, InstanceCount=1)
+    │  ├─[ ] ----------Barrier----------
+    │  ├─[ ] "BlurPS"
+    │  ├─[ ] ----------Barrier----------
+    │  ├─[ ] Draw(VertexCount=3, InstanceCount=1)
+    │  ├─[ ] ----------Barrier----------
+    │  ├─[ ] "BlurPS"
+    │  ├─[ ] ----------Barrier----------
+    │  ├─[ ] Draw(VertexCount=3, InstanceCount=1)
+    │  └─[ ] ----------Barrier----------
+    └─[ ] "Indirect draw simple"
+
+Below is an example execution marker tree for a Vulkan crashing application with Hardware Crash Analysis enabled::
+
+    Command Buffer ID: 0xea9c (Queue type: Direct)
+    ===============================================
+    [>] "Frame 12003 Graphics CB"
+    └─[>] "Vk_Renderer::draw"
+        ├─[X] "Vk_Renderer::draw::Skybox"
+        ├─[X] "Vk_Renderer::draw::Shadow"
+        ├─[X] "Vk_Renderer::draw::Raytracing"
+        ├─[>] "Vk_Renderer::draw::Mesh"
+        │  ├─[X] "Draw Light Spheres"
+        │  ├─[>] "Vk_Renderer::DrawObjectsPBR"
+        │  │  ├─[X] DrawIndexed(IndexCount=2304, InstanceCount=1)
+        │  │  ├─[X] DrawIndexed(IndexCount=2304, InstanceCount=1)
+        │  │  ├─[#] DrawIndexed(IndexCount=2304, InstanceCount=1) <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1, ShaderInfoID2}>
+        │  │  ├─[#] DrawIndexed(IndexCount=2304, InstanceCount=1) <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1, ShaderInfoID2}>
+        │  │  │ 
+        ⁞  ⁞  ⁞ (7 consecutive occurrences of in progress nodes)
+        │  │  │ 
+        │  │  ├─[#] DrawIndexed(IndexCount=6, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1, ShaderInfoID2}>
+        │  │  ├─[#] DrawIndexed(IndexCount=6, InstanceCount=1)    <-- has a correlated running wave <SHADER INFO section IDs: {ShaderInfoID1, ShaderInfoID2}>
+        │  │  ├─[ ] DrawIndexed(IndexCount=6, InstanceCount=1)
+        │  │  ├─[ ] DrawIndexed(IndexCount=6, InstanceCount=1)
+        │  │  └─[ ] DrawIndexedIndirectMulti
+        │  ├─[ ] DrawIndexed(IndexCount=6, InstanceCount=1)
+        │  ├─[ ] DrawIndexed(IndexCount=6, InstanceCount=1)
+        │  └─[ ] "Vk_Renderer::draw::mesh_shader"
+        ├─[ ] "Vk_Renderer::draw::Bloom"
+        └─[ ] "Vk_Renderer::draw::Fullscreen"                                     
 
 **Details about the crashing shader**
 
-For each marker node annotated with ``[#]`` (*shader in flight*), a list of unique associated SHADER INFO section IDs, API PSO hash and a list of API stages for each associated shader are provided.
+For each marker node annotated with ``[#]`` (*shader in flight*):
+
+* a unique associated SHADER INFO section ID, API PSO hash and API stage for associated shader is provided.
+* when a PDB search path is provided and the files that contain the debug information are successfully correlated to their corresponding in-flight shaders, the shader's entry point and source file are also provided.
+* when more than one in-flight shaders is associated with the same execution marker, only a list of unique associated SHADER INFO section IDs is provided.
+
 As you can see, the annotation of the in-flight execution markers contains a reference to ShaderInfoID1. This is a handle which you can use to jump to a new section that is added to the RGD output file: the SHADER INFO section. The name ShaderInfoID1 is arbitrary. Its purpose is to serve as a unique string identifier in the scope of the RGD output text file, which will allow you to jump quickly to the relevant sections of the text file when searching that string.
 
 **SHADER INFO**
@@ -329,11 +397,16 @@ As you can see, the annotation of the in-flight execution markers contains a ref
 This section is titled ``SHADER INFO`` and contains a low-level information about the shaders which are identified as in-flight at the time of the crash.
 
 The ``SHADER INFO`` section will list the following information for each shader that was in flight at the time of the crash::
-  * **Shader Info ID** : Arbitrary identifier for the shader info.
-  * **API PSO hash**   : Hash value that uniquely identifies the API Pipeline State Object (PSO) that was used to create the shader.
-  * **API shader hash**: Hash value that uniquely identifies the shader.
-  * **API stage**      : API stage that the shader was used in (e.g. Vertex, Pixel, Compute).
-  * **Disassembly**    : Disassembly of the shader showing the consolidated pointers to instruction/s which were being executed by one or more wavefronts at the time of the crash.
+  * **Shader Info ID**                 : Arbitrary identifier for the shader info.
+  * **API stage**                      : The API stage of the given shader.
+  * **API PSO hash**                   : Hash value that uniquely identifies the API Pipeline State Object (PSO) that was used to create the shader.
+  * **API shader hash**                : Hash value that uniquely identifies the shader.
+  * **File name**                      : [DX12 only] The name of the source file in which the shader was defined, if available (e.g. "DownSamplePS.hlsl").
+  * **Entry point name**               : [DX12 only] The name of the shader's entry point, if available (e.g. "mainPS").
+  * **Shader IO and resource bindings**: [DX12 only] Information about the shader's input/output and resource bindings, if available.
+  * **HLSL source code**               : [DX12 only] The HLSL source code of the shader, if available.
+  * **Disassembly**                    : Disassembly of the shader showing the consolidated pointers to instruction/s which were being executed by one or more wavefronts at the time of the crash.
+  
 
 Here is an example of a shader info::
 
@@ -341,10 +414,21 @@ Here is an example of a shader info::
     SHADER INFO
     ===========
 
-    Shader info ID : ShaderInfoID1
-    API PSO hash   : 0xc192105aa67f7e88
-    API shader hash: 0x9e7e544426c404defd8c0ea8a6f65c3b (high: 0x9e7e544426c404de, low: 0xfd8c0ea8a6f65c3b)
-    API stage      : Pixel
+    Shader info ID  : ShaderInfoID1
+    API stage       : Pixel
+    API PSO hash    : 0xe3204f6b7ea39e98
+    API shader hash : 0x9447bd598a9ffcb7022a22c95d0031c4 (high: 0x9447bd598a9ffcb7, low: 0x22a22c95d0031c4)
+    Entry point name: N/A (requires debug information, recompile shader with "-Zi -Qembed_debug'", '-Zi -Qsource_in_debug_module' or '-Zs')
+    Source file     : N/A (requires debug information, recompile shader with "-Zi -Qembed_debug'", '-Zi -Qsource_in_debug_module' or '-Zs')
+
+    Shader IO and resource bindings
+    ===============================
+    N/A (requires debug information, recompile shader with "-Zi -Qembed_debug'", '-Zi -Qsource_in_debug_module' or '-Zs')
+
+
+    HLSL source code
+    ================
+    N/A (requires debug information, recompile shader with "-Zi -Qembed_debug'", '-Zi' or '-Zs')
 
     Disassembly
     ===========
@@ -397,6 +481,205 @@ In case that you do need to see the full shader disassembly, you can do that by 
 .. note::
   For the tool to be able to retrieve the additional low-level information for your GPU crash case a few things need to happen. First, you must make sure that the Hardware Crash Analysis checkbox is checked in Radeon Developer Panel's (RDP) Crash Analysis tab (that is the case by default). In addition, since this version of the tool focuses on offending shaders, the GPU crash obviously needs to be triggered by a shader-executing hardware block. If the GPU crash happened somewhere else, no shader will be associated with the execution tree markers, and you will not have the benefits of the new Hardware Crash Analysis mode. However, in the case that your crash case is supported by RGD, you can count on the "standard" (RGD v1.3) information to be included, whether or not the Hardware Crash Analysis feature was applicable to your crash case.
 
+.. _debug_info:
+
+**DXC debug information**
+
+With DXC debug information support, the debug information that is produced by Microsoft®'s DirectX Shader Compiler (DXC) is used to augment the crash analysis output file with helpful information about offending high-level shaders.
+
+**Supported Formats**
+
+DXC can generate debug information in the following formats, all of which are supported by RGD:
+
+1. **Embedded** (`-Zi -Qembed_debug`): Debug information is embedded in the same file that contains the compiled shader.
+2. **Separate** (`-Zi -Qsource_in_debug_module -Fd <PDB output path>`): Debug information is stored in a separate PDB file.
+3. **Small (Slim)** (`-Zs -Fd <PDB output path>`): A minimal PDB file containing only high-level source code and compile options.
+
+**Usage**
+
+How to use DXC debug information to improve RGD output?
+
+1. Ensure that **Hardware Crash Analysis** is enabled in the Radeon Developer Panel (RDP).
+2. Configure the debug information file search paths:
+
+   - All the PDB search paths that were listed in RDP during the crash dump capture will be recorded in the AMD GPU crash dump (.rgd) file and automatically used by the RGD command line when parsing that file.
+   - If the relevant path is only known later during analysis, you can use the --pdb-path command line option to ensure that the rgd command line tool locates and uses the files that include the debug information.
+
+**Configuration in RDP**
+
+You can configure the debug information file search paths using the "Shader debug information search paths" UI in RDP. This allows RGD to locate the relevant debug information files during crash analysis.
+
+.. image:: images/rdp_pdb_search_paths.png
+
+**New Information in Crash Reports**
+
+When debug information is available, the crash analysis report includes:
+
+- **File name** and **entry point name** of the offending shader.
+- **Shader IO and resource bindings**, detailing inputs, outputs, and resource usage.
+- **HLSL source code** for the shader, with relevant sections highlighted.
+
+Here is an example of the SHADER INFO when debug information is available::
+
+    ===========
+    SHADER INFO
+    ===========
+    
+    Shader info ID  : ShaderInfoID1
+    API stage       : Pixel
+    API PSO hash    : 0xe3204f6b7ea39e98
+    API shader hash : 0x9447bd598a9ffcb7022a22c95d0031c4 (high: 0x9447bd598a9ffcb7, low: 0x22a22c95d0031c4)
+    File name       : DownSamplePS.hlsl
+    Entry point name: mainPS
+
+
+    Shader IO and resource bindings
+    ===============================
+    ;
+    ; Input signature:
+    ;
+    ; Name                 Index   Mask Register SysValue  Format   Used
+    ; -------------------- ----- ------ -------- -------- ------- ------
+    ; TEXCOORD                 0   xy          0     NONE   float   xy
+    ;
+    ;
+    ; Output signature:
+    ;
+    ; Name                 Index   Mask Register SysValue  Format   Used
+    ; -------------------- ----- ------ -------- -------- ------- ------
+    ; SV_Target                0   xyzw        0   TARGET   float   xyzw
+    ;
+    ; shader debug name: 1396690ed550686e26be113392120f5b.pdb
+    ; shader hash: 1396690ed550686e26be113392120f5b
+    ;
+    ; Pipeline Runtime Information:
+    ;
+    ;PSVRuntimeInfo:
+    ; Pixel Shader
+    ; DepthOutput=0
+    ; SampleFrequency=0
+    ; MinimumExpectedWaveLaneCount: 0
+    ; MaximumExpectedWaveLaneCount: 4294967295
+    ; UsesViewID: false
+    ; SigInputElements: 1
+    ; SigOutputElements: 1
+    ; SigPatchConstOrPrimElements: 0
+    ; SigInputVectors: 1
+    ; SigOutputVectors[0]: 1
+    ; SigOutputVectors[1]: 0
+    ; SigOutputVectors[2]: 0
+    ; SigOutputVectors[3]: 0
+    ;
+    ;
+    ; Input signature:
+    ;
+    ; Name                 Index             InterpMode DynIdx
+    ; -------------------- ----- ---------------------- ------
+    ; TEXCOORD                 0                 linear
+    ;
+    ; Output signature:
+    ;
+    ; Name                 Index             InterpMode DynIdx
+    ; -------------------- ----- ---------------------- ------
+    ; SV_Target                0
+    ;
+    ; Buffer Definitions:
+    ;
+    ; cbuffer cbPerFrame
+    ; {
+    ;
+    ;   struct cbPerFrame
+    ;   {
+    ;
+    ;       float2 u_invSize;                             ; Offset:    0
+    ;       int u_mipLevel;                               ; Offset:    8
+    ;
+    ;   } cbPerFrame;                                     ; Offset:    0 Size:    12
+    ;
+    ; }
+    ;
+    ;
+    ; Resource Bindings:
+    ;
+    ; Name                                 Type  Format         Dim      ID      HLSL Bind  Count
+    ; ------------------------------ ---------- ------- ----------- ------- -------------- ------
+    ; cbPerFrame                        cbuffer      NA          NA     CB0            cb0     1
+    ; samLinearMirror                   sampler      NA          NA      S0             s0     1
+    ; inputTex                          texture     f32          2d      T0             t0     1
+    ;
+    ;
+    ; ViewId state:
+    ;
+    ; Number of inputs: 2, outputs: 4
+    ; Outputs dependent on ViewId: {  }
+    ; Inputs contributing to computation of Outputs:
+    ;   output 0 depends on inputs: { 0, 1 }
+    ;   output 1 depends on inputs: { 0, 1 }
+    ;   output 2 depends on inputs: { 0, 1 }
+    ;   output 3 depends on inputs: { 0, 1 }
+    ;
+
+    HLSL source code
+    ================
+    // Copyright(c) 2025 Advanced Micro Devices, Inc.All rights reserved.
+    //
+    //--------------------------------------------------------------------------------------
+    // Constant Buffer
+    //--------------------------------------------------------------------------------------
+    cbuffer cbPerFrame : register(b0)
+    {
+        float2 u_invSize;
+        int u_mipLevel;
+    }
+
+    //--------------------------------------------------------------------------------------
+    // I/O Structures
+    //--------------------------------------------------------------------------------------
+    struct VERTEX
+    {
+        float2 vTexcoord : TEXCOORD;
+    };
+
+    //--------------------------------------------------------------------------------------
+    // Texture definitions
+    //--------------------------------------------------------------------------------------
+    Texture2D        inputTex         :register(t0);
+    SamplerState     samLinearMirror  :register(s0);
+
+    //--------------------------------------------------------------------------------------
+    // Main function
+    //--------------------------------------------------------------------------------------
+
+    static float2 offsets[9] = { 
+        float2( 1, 1), float2( 0, 1), float2(-1, 1), 
+        float2( 1, 0), float2( 0, 0), float2(-1, 0), 
+        float2( 1,-1), float2( 0,-1), float2(-1,-1)
+        };
+
+    float4 mainPS(VERTEX Input) : SV_Target
+    {
+        // gaussian like downsampling
+        
+        float4 color = float4(0,0,0,0);
+
+        if (u_mipLevel==0)
+        {
+            for(int i=0;i<9;i++)
+                color += log(max(inputTex.Sample(samLinearMirror, Input.vTexcoord + (2 * u_invSize * offsets[i])), float4(0.01, 0.01, 0.01, 0.01) ));
+            return exp(color / 9.0f);
+        }
+        else
+        {
+            for(int i=0;i<9;i++)
+                color += inputTex.Sample(samLinearMirror, Input.vTexcoord + (2 * u_invSize * offsets[i]) );
+            return color / 9.0f;
+        }
+    }
+
+
+.. note::
+   Please note that while the HLSL source code is included in the output file, there is currently no correlation between the offending RDNA instruction and the corresponding high-level source lines. We are actively working with our compiler teams to enable this capability and look forward to sharing updates in a future release.
+
 Interpreting the results
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -438,7 +721,7 @@ Let's elaborate:
    but a different other type of problem, e.g. a shader hang due to timeout (too long execution) or an infinite loop.
 
 
-Scope of v1.4
+Scope of v1.5
 -------------
 RGD is designed to capture **GPU crashes** on Windows. If a GPU fault (such as memory page fault or infinite loop in a shader) causes the GPU driver to not respond to the OS for some pre-determined 
 time period (the default on Windows is 2 seconds), the OS will detect that and attempt to restart or remove the device. This mechanism is also known as "TDR" (Timeout Detection and Recovery) and is what we 
@@ -457,7 +740,7 @@ Rendering code which **incorrectly uses D3D12 or Vulkan** may also fail purely o
 Therefore, such crashes are not captured by RGD. They usually result in ``DXGI_ERROR_INVALID_CALL`` error code returned, and 
 are usually detected by the D3D12 Debug Layer.
 
-A powerful new feature ``Hardware Crash Analysis`` is added. See the section :ref:`hardware_crash_analysis` for more details.
+For DX12 applications ``Hardware Crash Analysis`` feature now supports ``debug information``. See the section :ref:`hardware_crash_analysis` for more details.
 
 
 .. note::

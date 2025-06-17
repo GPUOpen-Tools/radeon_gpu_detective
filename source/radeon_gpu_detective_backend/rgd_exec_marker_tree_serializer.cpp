@@ -71,34 +71,33 @@ static std::string GenerateBarrierString()
 
 // *** INTERNALLY-LINKED AUXILIARY FUNCTIONS - END ***
 
-void ExecMarkerTreeSerializer::PushMarkerBegin(uint64_t                            timestamp,
-                                               uint32_t                            marker_value,
-                                               uint64_t pipeline_api_pso_hash,
-                                               bool is_shader_in_flight,
-                                               const std::string&                  str, 
+void ExecMarkerTreeSerializer::PushMarkerBegin(uint64_t               timestamp,
+                                               uint32_t               marker_value,
+                                               uint64_t               pipeline_api_pso_hash,
+                                               bool                   is_shader_in_flight,
+                                               const std::string&     str,
                                                RgdCrashingShaderInfo& rgd_crashing_shader_info)
 {
 #ifdef _DEBUG
     UpdateAndValidateTimestamp(timestamp);
 #endif
 
-    MarkerNode new_marker_node(timestamp, marker_value, pipeline_api_pso_hash, is_shader_in_flight, str);
-
+    std::shared_ptr<MarkerNode> new_marker_node = std::make_shared<MarkerNode>(timestamp, marker_value, pipeline_api_pso_hash, is_shader_in_flight, str);
+    new_marker_node->exec_status                = GetItemStatus(*new_marker_node);
     if (is_shader_in_flight)
     {
-        new_marker_node.crashing_shader_info.crashing_shader_ids = std::move(rgd_crashing_shader_info.crashing_shader_ids);
-        new_marker_node.crashing_shader_info.api_stages = std::move(rgd_crashing_shader_info.api_stages);
+        new_marker_node->crashing_shader_info = std::move(rgd_crashing_shader_info);
     }
     if (current_stack_.empty())
     {
         marker_nodes_.push_back(std::move(new_marker_node));
-        current_stack_.push_back(&marker_nodes_.back());
+        current_stack_.push_back(marker_nodes_.back().get());
     }
     else
     {
         MarkerNode* curr_marker_node = current_stack_.back();
         curr_marker_node->child_markers.push_back(std::move(new_marker_node));
-        current_stack_.push_back(&curr_marker_node->child_markers.back());
+        current_stack_.push_back(curr_marker_node->child_markers.back().get());
     }
 }
 
@@ -120,6 +119,32 @@ void ExecMarkerTreeSerializer::UpdateMarkerInfo(uint32_t marker_value, const uin
         {
             is_invalid_info_marker = true;
         }
+
+        uint8_t*                   marker_info             = const_cast<uint8_t*>(info);
+        ExecutionMarkerInfoHeader* exec_marker_info_header = reinterpret_cast<ExecutionMarkerInfoHeader*>(marker_info);
+        if (exec_marker_info_header->infoType == ExecutionMarkerInfoType::NestedCmdBuffer)
+        {
+            NestedCmdBufferInfo* nested_cmd_buffer_info = reinterpret_cast<NestedCmdBufferInfo*>(marker_info + sizeof(ExecutionMarkerInfoHeader));
+
+            // Check if the marker node points another nested cmd buffer.
+            if (node.marker_str == kStrExecuteNestedCmdBuffers)
+            {
+                // One marker may have multiple 'Nested Command Buffers Info' events. Store each command buffer ID in a vector for current exec marker node.
+                node.nested_cmd_buffer_ids.push_back(nested_cmd_buffer_info->nestedCmdBufferId);
+
+                // Store the root marker node of the nested command buffer in a map with the nested command buffer ID as the key.
+                assert(nested_cmd_buffer_nodes_map_.find(nested_cmd_buffer_info->nestedCmdBufferId) == nested_cmd_buffer_nodes_map_.end());
+                if (nested_cmd_buffer_nodes_map_.find(nested_cmd_buffer_info->nestedCmdBufferId) == nested_cmd_buffer_nodes_map_.end())
+                {
+                    nested_cmd_buffer_nodes_map_[nested_cmd_buffer_info->nestedCmdBufferId] = &node;
+                }
+            }
+            else
+            {
+                // Should not reach here.
+                assert(false);
+            }
+        }
     }
     else
     {
@@ -128,9 +153,10 @@ void ExecMarkerTreeSerializer::UpdateMarkerInfo(uint32_t marker_value, const uin
 
     if (is_invalid_info_marker)
     {
-        // There is no matching 'ExecutionMarkerBegin' for this 'ExecutionMarkerInfo' event. 
+        // There is no matching 'ExecutionMarkerBegin' for this 'ExecutionMarkerInfo' event.
         std::stringstream warning_msg;
-        warning_msg << "detected an 'ExecutionMarkerInfo' event with no matching 'ExecutionMarkerBegin' event for the marker value=0x" << std::hex << marker_value << std::dec << ".";
+        warning_msg << "detected an 'ExecutionMarkerInfo' event with no matching 'ExecutionMarkerBegin' event for the marker value=0x" << std::hex
+                    << marker_value << std::dec << ".";
         RgdUtils::PrintMessage(warning_msg.str().c_str(), RgdMessageType::kWarning, true);
     }
 }
@@ -163,7 +189,7 @@ void ExecMarkerTreeSerializer::ValidateExecutionMarkers()
         while (!current_stack_.empty())
         {
             const MarkerNode& current_node = *current_stack_.back();
-            if (GetItemStatus(current_node) == MarkerExecutionStatus::kInProgress)
+            if (GetMarkerNodeStatus(current_node) == MarkerExecutionStatus::kInProgress)
             {
                 std::stringstream console_msg;
                 console_msg << "detected a missing 'End' (pop) event for marker named \"" << current_node.marker_str << "\". Marker hierarchy might be impacted.";
@@ -177,6 +203,74 @@ void ExecMarkerTreeSerializer::ValidateExecutionMarkers()
     }
 }
 
+void ExecMarkerTreeSerializer::SetIsNestedCmdBuffer(bool is_nested_cmd_buffer)
+{
+    is_nested_cmd_buffer_ = is_nested_cmd_buffer;
+}
+
+bool ExecMarkerTreeSerializer::IsNestedCmdBuffer() const
+{
+    return is_nested_cmd_buffer_;
+}
+
+void ExecMarkerTreeSerializer::SetIsExecutesNestedCmdBuffer(bool is_execute_nested_cmd_buffer)
+{
+    is_executes_nested_cmd_buffer_ = is_execute_nested_cmd_buffer;
+}
+
+bool ExecMarkerTreeSerializer::IsExecutesNestedCmdBuffer() const
+{
+    return is_executes_nested_cmd_buffer_;
+}
+
+std::vector<uint64_t> ExecMarkerTreeSerializer::GetNestedCmdBufferIdsForExecTree() const
+{
+    std::vector<uint64_t> nested_cmd_buffer_ids;
+    for (const std::pair<uint64_t, MarkerNode*>& nested_cmd_buffer_node_pair : nested_cmd_buffer_nodes_map_)
+    {
+        nested_cmd_buffer_ids.push_back(nested_cmd_buffer_node_pair.first);
+    }
+
+    return nested_cmd_buffer_ids;
+}
+
+bool ExecMarkerTreeSerializer::UpdateNestedCmdBufferMarkerNodes(uint64_t                  cmd_buffer_id,
+                                                                ExecMarkerTreeSerializer& nested_cmd_buffer_tree,
+                                                                uint8_t                   nested_command_buffer_queue_type)
+{
+    bool ret = false;
+
+    auto iter = nested_cmd_buffer_nodes_map_.find(cmd_buffer_id);
+    if (iter != nested_cmd_buffer_nodes_map_.end())
+    {
+        MarkerNode* parent_cmd_buffer_node = iter->second;
+        assert(parent_cmd_buffer_node != nullptr);
+        if (parent_cmd_buffer_node != nullptr)
+        {
+            // Move the root marker node from nested command buffer to the relevant marker node of the parent command buffer.
+            for (std::shared_ptr<MarkerNode>& node_ptr : nested_cmd_buffer_tree.marker_nodes_)
+            {
+                parent_cmd_buffer_node->child_markers.push_back(node_ptr);
+            }
+
+            parent_cmd_buffer_node->nested_cmd_buffer_queue_type = nested_command_buffer_queue_type;
+            ret                                                  = true;
+        }
+        else
+        {
+            // Should not reach here.
+            assert(false);
+        }
+    }
+
+    return ret;
+}
+
+MarkerExecutionStatus ExecMarkerTreeSerializer::GetMarkerNodeStatus(const MarkerNode& node) const
+{
+    return node.exec_status;
+}
+
 std::string ExecMarkerTreeSerializer::SummaryListToString() const
 {
     std::stringstream txt;
@@ -188,10 +282,10 @@ std::string ExecMarkerTreeSerializer::SummaryListToString() const
     }
 
     std::vector<const MarkerNode*> marker_stack;
-    for (const auto& marker_node : marker_nodes_)
+    for (const std::shared_ptr<MarkerNode>& marker_node : marker_nodes_)
     {
         bool is_atleast_one_child_in_progress_place_holdler = false;
-        marker_stack.push_back(&marker_node);
+        marker_stack.push_back(marker_node.get());
         txt << GenerateSummaryString(marker_stack, is_atleast_one_child_in_progress_place_holdler);
         marker_stack.pop_back();
     }
@@ -203,10 +297,10 @@ void ExecMarkerTreeSerializer::SummaryListToJson(nlohmann::json& summary_list_js
     std::vector<const MarkerNode*> marker_stack;
 
     summary_list_json[kJsonElemMarkers] = nlohmann::json::array();
-    for (const auto& marker_node : marker_nodes_)
+    for (const std::shared_ptr<MarkerNode>& marker_node : marker_nodes_)
     {
         bool is_atleast_one_child_in_progress_place_holdler = false;
-        marker_stack.push_back(&marker_node);
+        marker_stack.push_back(marker_node.get());
         GenerateSummaryJson(marker_stack, summary_list_json, is_atleast_one_child_in_progress_place_holdler);
         marker_stack.pop_back();
     }
@@ -215,18 +309,18 @@ void ExecMarkerTreeSerializer::SummaryListToJson(nlohmann::json& summary_list_js
 void ExecMarkerTreeSerializer::GenerateSummaryJson(std::vector<const MarkerNode*>& marker_stack,
     nlohmann::json& marker_summary_json, bool& is_atleast_one_child_in_progress) const
 {
-    const MarkerNode* const node = marker_stack.back();
+    const MarkerNode* node = marker_stack.back();
     assert(node != nullptr);
     if (node != nullptr)
     {
-        if (GetItemStatus(*node) == MarkerExecutionStatus::kInProgress)
+        if (GetMarkerNodeStatus(*node) == MarkerExecutionStatus::kInProgress)
         {
             is_atleast_one_child_in_progress = true;
             bool is_atleast_one_child_of_current_in_progress = false;
 
-            for (const auto& child_marker : node->child_markers)
+            for (const std::shared_ptr<MarkerNode>& child_marker : node->child_markers)
             {
-                marker_stack.push_back(&child_marker);
+                marker_stack.push_back(child_marker.get());
                 GenerateSummaryJson(marker_stack, marker_summary_json, is_atleast_one_child_of_current_in_progress);
                 marker_stack.pop_back();
             }
@@ -278,10 +372,10 @@ std::string ExecMarkerTreeSerializer::TreeToString(const Config& user_config) co
 
 void ExecMarkerTreeSerializer::TreeToJson(const Config& user_config, nlohmann::json& marker_tree_json) const
 {
-    for (const auto& item : marker_nodes_)
+    for (const std::shared_ptr<MarkerNode>& item : marker_nodes_)
     {
         nlohmann::json marker_node_json;
-        TreeNodeToJson(item, marker_node_json, user_config);
+        TreeNodeToJson(*item, marker_node_json, user_config);
         marker_tree_json[kJsonElemEvents].push_back(marker_node_json);
     }
 }
@@ -289,129 +383,170 @@ void ExecMarkerTreeSerializer::TreeToJson(const Config& user_config, nlohmann::j
 void ExecMarkerTreeSerializer::TreeNodeToJson(const MarkerNode& node, nlohmann::json& marker_node_json, const Config& user_config) const
 {
     const char* kJsonElemMarkerExecStatus = "execution_status";
-    const char* kJsonElemMarkerSrc = "marker_source";
-    const char* KJsonElemName = "name";
-    const char* kJsonElemIndexCount = "index_count";
-    const char* kJsonElemVertexCount = "vertex_count";
-    if (kBarrierMarkerStrings.find(node.marker_str) != kBarrierMarkerStrings.end())
-    {
-        marker_node_json[KJsonElemName] = kBarrierStandard;
-    }
-    else
-    {
-        marker_node_json[KJsonElemName] = node.marker_str;
-    }
-
-    // Flag for the barrier marker. Enhanced crash info - shader in flight correlation info is not printed for barrier markers.
-    bool is_barrier_marker = false;
-
-    if (kBarrierMarkerStrings.find(node.marker_str) != kBarrierMarkerStrings.end())
-    {
-        is_barrier_marker = true;
-    }
-
-    // Flag for the application marker. Enhanced crash info - shader in flight correlation info is not printed for application markers.
-    // As pipeline bind events are correctly correlated with the driver markers only.
-    bool is_application_marker =
-        ((node.marker_value & kMarkerSrcMask) >> (kUint32Bits - kMarkerSrcBitLen)) == (uint32_t)CrashAnalysisExecutionMarkerSource::Application;
-
-
-    uint8_t* marker_info = const_cast<uint8_t*>(node.marker_info);
-    ExecutionMarkerInfoHeader* exec_marker_info_header = reinterpret_cast<ExecutionMarkerInfoHeader*>(marker_info);
-    if (exec_marker_info_header->infoType == ExecutionMarkerInfoType::Dispatch)
-    {
-        // Add thread dimensions from the dispatch info event.
-        DispatchInfo* dispatch_info = reinterpret_cast<DispatchInfo*>(marker_info + sizeof(ExecutionMarkerInfoHeader));
-        marker_node_json["thread_group_count"].push_back({
-            {"thread_x", dispatch_info->threadX},
-            {"thread_y", dispatch_info->threadY},
-            {"thread_z", dispatch_info->threadZ}
-            });
-    }
-    else if (exec_marker_info_header->infoType == ExecutionMarkerInfoType::Draw)
-    {
-        // Add the index count and instance count.
-        DrawInfo* draw_info = reinterpret_cast<DrawInfo*>(marker_info + sizeof(ExecutionMarkerInfoHeader));
-
-        // Vertex count field 'vtxIdxCount' is used for both storing vertex count when it's a non-indexed draw call and index count when it's an indexed draw call.
-        if (draw_info->drawType == CrashAnalysisExecutionMarkerApiType::CRASH_ANALYSIS_EXECUTION_MARKER_API_DRAW_INDEXED_INSTANCED)
+    const char* kJsonElemMarkerSrc        = "marker_source";
+    const char* KJsonElemName             = "name";
+    const char* kJsonElemIndexCount       = "index_count";
+    const char* kJsonElemVertexCount      = "vertex_count";
+    try
         {
-            marker_node_json[kJsonElemIndexCount] = draw_info->vtxIdxCount;
+        if (kBarrierMarkerStrings.find(node.marker_str) != kBarrierMarkerStrings.end())
+        {
+            marker_node_json[KJsonElemName] = kBarrierStandard;
         }
         else
         {
-            marker_node_json[kJsonElemVertexCount] = draw_info->vtxIdxCount;
+            marker_node_json[KJsonElemName] = node.marker_str;
         }
 
-        marker_node_json["instance_count"] = draw_info->instanceCount;
-    }
+        // Flag for the barrier marker. Enhanced crash info - shader in flight correlation info is not printed for barrier markers.
+        bool is_barrier_marker = false;
 
-    // Execution status.
-    const MarkerExecutionStatus status = GetItemStatus(node);
-    switch (status)
-    {
-    case MarkerExecutionStatus::kNotStarted:
-        marker_node_json[kJsonElemMarkerExecStatus] = "not_started";
-        break;
-    case MarkerExecutionStatus::kInProgress:
-        marker_node_json[kJsonElemMarkerExecStatus] = "in_progress";
-        break;
-    case MarkerExecutionStatus::kFinished:
-        marker_node_json[kJsonElemMarkerExecStatus] = "finished";
-        break;
-    default:
-        assert(0);
-    }
-
-    // Add marker source information.
-    if (user_config.is_marker_src)
-    {
-        switch ((node.marker_value & kMarkerSrcMask) >> (kUint32Bits - kMarkerSrcBitLen))
+        if (kBarrierMarkerStrings.find(node.marker_str) != kBarrierMarkerStrings.end())
         {
-        case (uint32_t)CrashAnalysisExecutionMarkerSource::Application:
-            marker_node_json[kJsonElemMarkerSrc] = kMarkerSrcApplication;
+            is_barrier_marker = true;
+        }
+
+        // Flag for the application marker. Enhanced crash info - shader in flight correlation info is not printed for application markers.
+        // As pipeline bind events are correctly correlated with the driver markers only.
+        bool is_application_marker =
+            ((node.marker_value & kMarkerSrcMask) >> (kUint32Bits - kMarkerSrcBitLen)) == (uint32_t)CrashAnalysisExecutionMarkerSource::Application;
+
+        uint8_t*                   marker_info             = const_cast<uint8_t*>(node.marker_info);
+        ExecutionMarkerInfoHeader* exec_marker_info_header = reinterpret_cast<ExecutionMarkerInfoHeader*>(marker_info);
+        if (exec_marker_info_header->infoType == ExecutionMarkerInfoType::Dispatch)
+        {
+            // Add thread dimensions from the dispatch info event.
+            DispatchInfo* dispatch_info = reinterpret_cast<DispatchInfo*>(marker_info + sizeof(ExecutionMarkerInfoHeader));
+            marker_node_json["thread_group_count"].push_back(
+                {{"thread_x", dispatch_info->threadX}, {"thread_y", dispatch_info->threadY}, {"thread_z", dispatch_info->threadZ}});
+        }
+        else if (exec_marker_info_header->infoType == ExecutionMarkerInfoType::Draw)
+        {
+            // Add the index count and instance count.
+            DrawInfo* draw_info = reinterpret_cast<DrawInfo*>(marker_info + sizeof(ExecutionMarkerInfoHeader));
+
+            // Vertex count field 'vtxIdxCount' is used for both storing vertex count when it's a non-indexed draw call and index count when it's an indexed draw call.
+            if (draw_info->drawType == CrashAnalysisExecutionMarkerApiType::CRASH_ANALYSIS_EXECUTION_MARKER_API_DRAW_INDEXED_INSTANCED)
+            {
+                marker_node_json[kJsonElemIndexCount] = draw_info->vtxIdxCount;
+            }
+            else
+            {
+                marker_node_json[kJsonElemVertexCount] = draw_info->vtxIdxCount;
+            }
+
+            marker_node_json["instance_count"] = draw_info->instanceCount;
+        }
+
+        // Execution status.
+        const MarkerExecutionStatus status = GetMarkerNodeStatus(node);
+        switch (status)
+        {
+        case MarkerExecutionStatus::kNotStarted:
+            marker_node_json[kJsonElemMarkerExecStatus] = "not_started";
             break;
-        case (uint32_t)CrashAnalysisExecutionMarkerSource::APILayer:
-            marker_node_json[kJsonElemMarkerSrc] = kMarkerSrcAPILayer;
+        case MarkerExecutionStatus::kInProgress:
+            marker_node_json[kJsonElemMarkerExecStatus] = "in_progress";
             break;
-        case (uint32_t)CrashAnalysisExecutionMarkerSource::PAL:
-            marker_node_json[kJsonElemMarkerSrc] = kMarkerSrcPal;
-            break;
-        case (uint32_t)CrashAnalysisExecutionMarkerSource::Hardware:
-            marker_node_json[kJsonElemMarkerSrc] = kMarkerSrcHw;
-            break;
-        case (uint32_t)CrashAnalysisExecutionMarkerSource::System:
+        case MarkerExecutionStatus::kFinished:
+            marker_node_json[kJsonElemMarkerExecStatus] = "finished";
             break;
         default:
-            // Should not reach here.
-            assert(false);
+            assert(0);
+        }
+
+        // Update marker node json element with nested command buffer IDs and queue type if applicable.
+        if (node.nested_cmd_buffer_ids.size() > 0)
+        {
+            static const char* kJsonElemNestedCmdBufferIds = "nested_command_buffer_ids";
+            marker_node_json[kJsonElemNestedCmdBufferIds]  = nlohmann::json::array();
+
+            for (size_t i = 0; i < node.nested_cmd_buffer_ids.size(); ++i)
+            {
+                marker_node_json[kJsonElemNestedCmdBufferIds].push_back(node.nested_cmd_buffer_ids[i]);
+            }
+            marker_node_json["nested_cmd_buffer_queue_type"] = RgdUtils::GetCmdBufferQueueTypeString((CmdBufferQueueType)node.nested_cmd_buffer_queue_type);
+        }
+
+        // Add marker source information.
+        if (user_config.is_marker_src)
+        {
+            switch ((node.marker_value & kMarkerSrcMask) >> (kUint32Bits - kMarkerSrcBitLen))
+            {
+            case (uint32_t)CrashAnalysisExecutionMarkerSource::Application:
+                marker_node_json[kJsonElemMarkerSrc] = kMarkerSrcApplication;
+                break;
+            case (uint32_t)CrashAnalysisExecutionMarkerSource::APILayer:
+                marker_node_json[kJsonElemMarkerSrc] = kMarkerSrcAPILayer;
+                break;
+            case (uint32_t)CrashAnalysisExecutionMarkerSource::PAL:
+                marker_node_json[kJsonElemMarkerSrc] = kMarkerSrcPal;
+                break;
+            case (uint32_t)CrashAnalysisExecutionMarkerSource::Hardware:
+                marker_node_json[kJsonElemMarkerSrc] = kMarkerSrcHw;
+                break;
+            case (uint32_t)CrashAnalysisExecutionMarkerSource::System:
+                break;
+            default:
+                // Should not reach here.
+                assert(false);
+            }
+        }
+
+        // Add in-flight shader information.
+        if (node.is_shader_in_flight && status == MarkerExecutionStatus::kInProgress && !is_barrier_marker && !is_application_marker)
+        {
+            marker_node_json["has_correlated_running_wave"]         = true;
+            marker_node_json[kJsonElemShaderInfo][kJsonElemShaders] = nlohmann::json::array();
+
+            const bool is_multiple_ids = node.crashing_shader_info.crashing_shader_ids.size() > 1;
+            if (is_multiple_ids)
+            {
+                // When there are multiple shaders associated with a single marker node, print only the Shader Info Section IDs.
+                marker_node_json[kJsonElemShaderInfo][kJsonElemShaders][kJsonElemShaderInfoIds] = nlohmann::json::array();
+                for (size_t i = 0; i < node.crashing_shader_info.crashing_shader_ids.size(); ++i)
+                {
+                    marker_node_json[kJsonElemShaderInfo][kJsonElemShaders][kJsonElemShaderInfoIds].push_back(node.crashing_shader_info.crashing_shader_ids[i]);
+                }
+            }
+            else
+            {
+                // When there is only one shader associated with a single marker node, print the Shader Info Section ID, API PSO Hash and API stage.
+                marker_node_json[kJsonElemShaderInfo][kJsonElemApiPsoHash] = node.api_pso_hash;
+
+                assert(node.crashing_shader_info.api_stages.size() == node.crashing_shader_info.crashing_shader_ids.size());
+                const size_t min_of_shader_ids_stages = std::min(node.crashing_shader_info.api_stages.size(), node.crashing_shader_info.crashing_shader_ids.size());
+                for (size_t i = 0; i < min_of_shader_ids_stages; ++i)
+                {
+                    marker_node_json[kJsonElemShaderInfo][kJsonElemShaders].push_back(
+                        {{kJsonElemShaderInfoId, node.crashing_shader_info.crashing_shader_ids[i]}, {kJsonElemApiStage, node.crashing_shader_info.api_stages[i]}});
+                }
+
+                // Print source file name and entry point name if debug information is available.
+                if (!node.crashing_shader_info.source_file_names.empty() && !node.crashing_shader_info.source_entry_point_names.empty() &&
+                    node.crashing_shader_info.source_file_names.size() == 1 && node.crashing_shader_info.source_entry_point_names.size() == 1)
+                {
+                    marker_node_json[kJsonElemShaderInfo][kJsonElemShaders].back()[kJsonElemSourceFileName] =
+                        (node.crashing_shader_info.source_file_names[0].empty() ? kStrNotAvailable : node.crashing_shader_info.source_file_names[0]);
+                    marker_node_json[kJsonElemShaderInfo][kJsonElemShaders].back()[kJsonElemEntryPointName] =
+                        (node.crashing_shader_info.source_entry_point_names.empty() ? kStrNotAvailable : node.crashing_shader_info.source_entry_point_names[0]);
+                }
+            }
+        }
+
+        if (status == MarkerExecutionStatus::kInProgress)
+        {
+            for (size_t i = 0; i < node.child_markers.size(); ++i)
+            {
+                nlohmann::json child_marker_node_json;
+                TreeNodeToJson(*node.child_markers[i], child_marker_node_json, user_config);
+                marker_node_json[kJsonElemEvents].push_back(child_marker_node_json);
+            }
         }
     }
-
-    // Add in-flight shader information.
-    if (node.is_shader_in_flight && status == MarkerExecutionStatus::kInProgress && !is_barrier_marker && !is_application_marker)
+    catch (nlohmann::json::exception& e)
     {
-        marker_node_json["has_correlated_running_wave"] = true;
-        marker_node_json[kJsonElemShaderInfo][kJsonElemApiPsoHash] = node.api_pso_hash;
-        marker_node_json[kJsonElemShaderInfo][kJsonElemShaders]    = nlohmann::json::array();
-
-        assert(node.crashing_shader_info.api_stages.size() == node.crashing_shader_info.crashing_shader_ids.size());
-        const size_t min_of_shader_ids_stages = std::min(node.crashing_shader_info.api_stages.size(), node.crashing_shader_info.crashing_shader_ids.size());
-        for (size_t i = 0; i < min_of_shader_ids_stages; ++i)
-        {
-            marker_node_json[kJsonElemShaderInfo][kJsonElemShaders].push_back(
-                {{kJsonElemShaderInfoId, node.crashing_shader_info.crashing_shader_ids[i]}, {kJsonElemApiStage, node.crashing_shader_info.api_stages[i]}});
-        }
-    }
-
-    if (status == MarkerExecutionStatus::kInProgress)
-    {
-        for (size_t i = 0; i < node.child_markers.size(); ++i)
-        {
-            nlohmann::json child_marker_node_json;
-            TreeNodeToJson(node.child_markers[i], child_marker_node_json, user_config);
-            marker_node_json[kJsonElemEvents].push_back(child_marker_node_json);
-        }
+        RgdUtils::PrintMessage(e.what(), RgdMessageType::kError, true);
     }
 }
 
@@ -443,14 +578,14 @@ std::string ExecMarkerTreeSerializer::GenerateSummaryString(std::vector<const Ma
     assert(node != nullptr);
     if (node != nullptr)
     {
-        if (GetItemStatus(*node) == MarkerExecutionStatus::kInProgress)
+        if (GetMarkerNodeStatus(*node) == MarkerExecutionStatus::kInProgress)
         {
             is_atleast_one_child_in_progress = true;
             bool is_atleast_one_child_of_current_in_progress = false;
 
-            for (const auto& child_marker : node->child_markers)
+            for (const std::shared_ptr<MarkerNode>& child_marker : node->child_markers)
             {
-                marker_stack.push_back(&child_marker);
+                marker_stack.push_back(child_marker.get());
                 txt << GenerateSummaryString(marker_stack, is_atleast_one_child_of_current_in_progress);
                 marker_stack.pop_back();
             }
@@ -500,6 +635,7 @@ std::string ExecMarkerTreeSerializer::TreeNodeToString(std::vector<bool> is_last
     const size_t kMinNumberOfNodesToSquash = 9;
 
     const char* kMarkerNodeHasACorrelatedRunningWave = "<-- has a correlated running wave";
+    const char* kShaderInfoSectionId                = "SHADER INFO section ID";
 
     std::stringstream txt;
     const size_t kIndentationDepth = is_last_on_level.size();
@@ -553,7 +689,7 @@ std::string ExecMarkerTreeSerializer::TreeNodeToString(std::vector<bool> is_last
     if (item.marker_str != kExecTreeDummyRootString)
     {
         // Execution status.
-        status = GetItemStatus(item);
+        status = GetMarkerNodeStatus(item);
         switch (status)
         {
         case MarkerExecutionStatus::kNotStarted:
@@ -621,6 +757,22 @@ std::string ExecMarkerTreeSerializer::TreeNodeToString(std::vector<bool> is_last
             txt << "(" << count_type_string << "=" << draw_info->vtxIdxCount << ", " << kInstanceCountStr << "=" << draw_info->instanceCount << ")";
         }
 
+        if (item.nested_cmd_buffer_ids.size() > 0)
+        {
+            const bool is_multiple_ids = item.nested_cmd_buffer_ids.size() > 1;
+            txt << "(Nested Command Buffer IDs: {0x";
+            
+            for (size_t i = 0; i < item.nested_cmd_buffer_ids.size(); ++i)
+            {
+                txt << "0x" << std::hex << item.nested_cmd_buffer_ids[i] << std::dec;
+                if (is_multiple_ids && i + 1 < item.nested_cmd_buffer_ids.size())
+                {
+                    txt << ", ";
+                }
+            }
+            txt << "}, " << "(Queue type: " << RgdUtils::GetCmdBufferQueueTypeString((CmdBufferQueueType)item.nested_cmd_buffer_queue_type) << "))";
+        }
+
         if (user_config.is_marker_src)
         {
             switch ((item.marker_value & kMarkerSrcMask) >> (kUint32Bits - kMarkerSrcBitLen))
@@ -647,28 +799,44 @@ std::string ExecMarkerTreeSerializer::TreeNodeToString(std::vector<bool> is_last
 
         if (item.is_shader_in_flight && status == MarkerExecutionStatus::kInProgress && !is_barrier_marker && !is_application_marker)
         {
-            txt << " " << kMarkerNodeHasACorrelatedRunningWave << " <SHADER INFO section IDs: {";
+            txt << " " << kMarkerNodeHasACorrelatedRunningWave << " <" << kShaderInfoSectionId;
+            
             const bool is_multiple_ids = item.crashing_shader_info.crashing_shader_ids.size() > 1;
-            for (size_t i = 0; i < item.crashing_shader_info.crashing_shader_ids.size(); ++i)
+            if (is_multiple_ids)
             {
-                txt << item.crashing_shader_info.crashing_shader_ids[i];
-                if (is_multiple_ids && i + 1 < item.crashing_shader_info.crashing_shader_ids.size())
+                // When there are multiple shaders associated with a single marker node, print only the Shader Info Section IDs. 
+                txt << "s: {";
+                for (size_t i = 0; i < item.crashing_shader_info.crashing_shader_ids.size(); ++i)
                 {
-                    txt << ", ";
+                    txt << item.crashing_shader_info.crashing_shader_ids[i];
+                    if (i + 1 < item.crashing_shader_info.crashing_shader_ids.size())
+                    {
+                        txt << ", ";
+                    }
                 }
+                txt << "}";
             }
-            txt << "}, API PSO hash = 0x" << std::hex << item.api_pso_hash << std::dec << ", API stages: {";
-            assert(item.crashing_shader_info.api_stages.size() > 0);
-            const bool is_multiple_stages = item.crashing_shader_info.api_stages.size() > 1;
-            for (size_t i = 0; i < item.crashing_shader_info.crashing_shader_ids.size(); ++i)
+            else if (item.crashing_shader_info.crashing_shader_ids.size() == 1
+                && item.crashing_shader_info.api_stages.size() == 1)
             {
-                txt << item.crashing_shader_info.api_stages[i];
-                if (is_multiple_stages && i + 1 < item.crashing_shader_info.api_stages.size())
+                // When there is only one shader associated with a single marker node, print the Shader Info Section ID, API PSO Hash and API stage.
+                // Print source file name and entry point name if debug information is available.
+                txt << ": " << item.crashing_shader_info.crashing_shader_ids[0];  
+                if (!item.crashing_shader_info.source_file_names.empty() && !item.crashing_shader_info.source_entry_point_names.empty() &&
+                    item.crashing_shader_info.source_file_names.size() == 1 && item.crashing_shader_info.source_entry_point_names.size() == 1)
                 {
-                    txt << ", ";
+                    txt << ", Entry point: " << item.crashing_shader_info.source_entry_point_names[0];
+                    txt << ", Source file: " << item.crashing_shader_info.source_file_names[0];
                 }
+                txt << ", API stage: " << item.crashing_shader_info.api_stages[0];
+                txt << ", API PSO hash: 0x" << std::hex << item.api_pso_hash << std::dec;
             }
-            txt << "}>";
+            else
+            {
+                // Should not reach here.
+                assert(false);
+            }
+            txt << ">";
         }
 
         txt << std::endl;
@@ -686,22 +854,22 @@ std::string ExecMarkerTreeSerializer::TreeNodeToString(std::vector<bool> is_last
             is_last_on_level.push_back(false);
             for (size_t i = 0; i + 1 < sub_item_count; ++i)
             {
-                if (!user_config.is_expand_markers && item.child_markers[i].repeating_same_status_count != 0 && total_nodes_with_same_status == 0)
+                if (!user_config.is_expand_markers && item.child_markers[i]->repeating_same_status_count != 0 && total_nodes_with_same_status == 0)
                 {
                     // For default output, squash the repeated nodes with same status on the same level.
-                    total_nodes_with_same_status = item.child_markers[i].repeating_same_status_count + 1;
+                    total_nodes_with_same_status = item.child_markers[i]->repeating_same_status_count + 1;
                     const size_t kNodesToPrint = kMaxNodesOfSameStatusToPrint - kMinNumberOfNodesToSquash;
                     first_skip_idx = i + (kNodesToPrint / 2);
                     last_skip_idx = first_skip_idx + (total_nodes_with_same_status - kNodesToPrint);
                 }
-                else if (item.child_markers[i].repeating_same_status_count == 0)
+                else if (item.child_markers[i]->repeating_same_status_count == 0)
                 {
                     total_nodes_with_same_status = 0;
                 }
 
                 if (total_nodes_with_same_status == 0 || i < first_skip_idx || i > last_skip_idx)
                 {
-                    txt << TreeNodeToString(is_last_on_level, item.child_markers[i], user_config);
+                    txt << TreeNodeToString(is_last_on_level, *item.child_markers[i], user_config);
                 }
                 else if (i == first_skip_idx)
                 {
@@ -727,7 +895,7 @@ std::string ExecMarkerTreeSerializer::TreeNodeToString(std::vector<bool> is_last
                                     {
                                         size_t occurrences = last_skip_idx - first_skip_idx + 1;
                                         txt << "(" << occurrences << " consecutive occurrences of "
-                                            << MarkerExecStatusToString(GetItemStatus(item.child_markers[first_skip_idx])) << " nodes)";
+                                            << MarkerExecStatusToString(GetMarkerNodeStatus(*item.child_markers[first_skip_idx])) << " nodes)";
                                     }
                                 }
                                 else
@@ -742,7 +910,7 @@ std::string ExecMarkerTreeSerializer::TreeNodeToString(std::vector<bool> is_last
                 }
             }
             is_last_on_level.back() = true;
-            txt << TreeNodeToString(is_last_on_level, item.child_markers.back(), user_config);
+            txt << TreeNodeToString(is_last_on_level, *item.child_markers.back(), user_config);
             is_last_on_level.pop_back();
         }
     }
@@ -755,16 +923,16 @@ void ExecMarkerTreeSerializer::UpdateSameStatusMarkerNodesCount()
     for (intmax_t idx = static_cast<intmax_t>(marker_nodes_.size()) - 1; idx > 0; idx--)
     {
         // Process nodes n - 1 to 1.
-        MarkerNode& current_node = marker_nodes_[idx];
-        MarkerNode& previous_node = marker_nodes_[idx - 1];
+        MarkerNode& current_node = *marker_nodes_[idx];
+        MarkerNode& previous_node = *marker_nodes_[idx - 1];
 
-        const MarkerExecutionStatus current_node_status = GetItemStatus(current_node);
-        const MarkerExecutionStatus previous_node_status = GetItemStatus(previous_node);
+        const MarkerExecutionStatus current_node_status = GetMarkerNodeStatus(current_node);
+        const MarkerExecutionStatus previous_node_status = GetMarkerNodeStatus(previous_node);
 
         if (!current_node.child_markers.empty() && current_node_status == MarkerExecutionStatus::kInProgress)
         {
             // Update same status marker nodes count for this node.
-            UpdateSameStatusMarkerNodesCountForThisNode(marker_nodes_[idx]);
+            UpdateSameStatusMarkerNodesCountForThisNode(*marker_nodes_[idx]);
         }
 
         if ((current_node_status != MarkerExecutionStatus::kInProgress || current_node.child_markers.empty())
@@ -788,10 +956,10 @@ void ExecMarkerTreeSerializer::UpdateSameStatusMarkerNodesCount()
         }
     }
 
-    if (!marker_nodes_.empty() && !marker_nodes_[0].child_markers.empty() && GetItemStatus(marker_nodes_[0]) == MarkerExecutionStatus::kInProgress)
+    if (!marker_nodes_.empty() && !marker_nodes_[0]->child_markers.empty() && GetMarkerNodeStatus(*marker_nodes_[0]) == MarkerExecutionStatus::kInProgress)
     {
         // Update same status marker nodes count for this node.
-        UpdateSameStatusMarkerNodesCountForThisNode(marker_nodes_[0]);
+        UpdateSameStatusMarkerNodesCountForThisNode(*marker_nodes_[0]);
     }
 
 }
@@ -801,11 +969,11 @@ void ExecMarkerTreeSerializer::UpdateSameStatusMarkerNodesCountForThisNode(Marke
     for (intmax_t idx = static_cast<intmax_t>(current_node.child_markers.size()) - 1; idx > 0; idx--)
     {
         // Process nodes n - 1 to 1.
-        MarkerNode& current_child_node = current_node.child_markers[idx];
-        MarkerNode& previous_child_node = current_node.child_markers[idx - 1];
+        MarkerNode& current_child_node = *current_node.child_markers[idx];
+        MarkerNode& previous_child_node = *current_node.child_markers[idx - 1];
 
-        const MarkerExecutionStatus current_child_node_status = GetItemStatus(current_child_node);
-        const MarkerExecutionStatus previous_child_node_status = GetItemStatus(previous_child_node);
+        const MarkerExecutionStatus current_child_node_status = GetMarkerNodeStatus(current_child_node);
+        const MarkerExecutionStatus previous_child_node_status = GetMarkerNodeStatus(previous_child_node);
 
         if (!current_child_node.child_markers.empty() && current_child_node_status == MarkerExecutionStatus::kInProgress)
         {
@@ -833,9 +1001,9 @@ void ExecMarkerTreeSerializer::UpdateSameStatusMarkerNodesCountForThisNode(Marke
         }
     }
 
-    if (!current_node.child_markers.empty() && !current_node.child_markers[0].child_markers.empty())
+    if (!current_node.child_markers.empty() && !current_node.child_markers[0]->child_markers.empty())
     {
         // Process node 0.
-        UpdateSameStatusMarkerNodesCountForThisNode(current_node.child_markers[0]);
+        UpdateSameStatusMarkerNodesCountForThisNode(*current_node.child_markers[0]);
     }
 }

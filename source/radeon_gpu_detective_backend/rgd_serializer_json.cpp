@@ -17,9 +17,13 @@
 
 // *** INTERNALLY-LINKED AUXILIARY CONSTANTS - BEGIN ***
 
-static const char* kJsonElemTimestampElement = "timestamp";
-static const char* kJsonElemSystemInfo       = "system_info";
-static const char* kJsonElemDriverInfo       = "driver_info";
+static const char* kJsonElemTimestampElement          = "timestamp";
+static const char* kJsonElemSystemInfo                = "system_info";
+static const char* kJsonElemDriverInfo                = "driver_info";
+static const char* kJsonElemPdbFiles                  = "pdb_files";
+static const char* kJsonElemCrashAnalysisFile         = "crash_analysis_file";
+static const char* kJsonElemPdbSearchPathsFromRgdFile = "pdb_search_paths_from_rgd_file";
+static const char* kJsonElemPdbSearchPathsFromRgdCli  = "pdb_search_paths_from_rgd_cli";
 
 // *** INTERNALLY-LINKED AUXILIARY CONSTANTS - ENDS ***
 
@@ -36,20 +40,81 @@ static std::string GenerateCountName(const std::string& name_prefix, uint32_t in
 
 // *** INTERNALLY-LINKED AUXILIARY FUNCTIONS - END ***
 
-void RgdSerializerJson::SetInputInfo(const Config&                        user_config,
-                                     const TraceProcessInfo&              process_info,
-                                     const system_info_utils::SystemInfo& system_info,
-                                     const TraceChunkApiInfo&             api_info)
+void RgdSerializerJson::SetInputInfo(const Config& user_config, const RgdCrashDumpContents& contents, const std::vector<std::string>& debug_info_files)
 {
-    json_["crash_analysis_file"]["input_crash_dump_file_name"] = user_config.crash_dump_file;
-    json_["crash_analysis_file"]["input_crash_dump_file_creation_time"] = RgdUtils::GetFileCreationTime(user_config.crash_dump_file);
+    json_[kJsonElemCrashAnalysisFile]["input_crash_dump_file_name"] = user_config.crash_dump_file;
+    json_[kJsonElemCrashAnalysisFile]["input_crash_dump_file_creation_time"] = RgdUtils::GetFileCreationTime(user_config.crash_dump_file);
     std::string rgd_version_string;
     RgdUtils::TrimLeadingAndTrailingWhitespace(RGD_TITLE, rgd_version_string);
-    json_["crash_analysis_file"]["rgd_cli_version"] = rgd_version_string;
-    json_["crash_analysis_file"]["json_schema_version"] = RGD_JSON_SCHEMA_VERSION;
-    json_["crash_analysis_file"]["crashing_process_id"] = process_info.process_id;
-    json_["crash_analysis_file"]["crashing_process_path"] = (process_info.process_path.empty() ? kStrNotAvailable : process_info.process_path);
-    json_["crash_analysis_file"]["api"] = RgdUtils::GetApiString(api_info.apiType);
+    json_[kJsonElemCrashAnalysisFile]["rgd_cli_version"] = rgd_version_string;
+    json_[kJsonElemCrashAnalysisFile]["json_schema_version"] = RGD_JSON_SCHEMA_VERSION;
+    json_[kJsonElemCrashAnalysisFile]["crashing_process_id"] = contents.crashing_app_process_info.process_id;
+    json_[kJsonElemCrashAnalysisFile]["crashing_process_path"] =
+        (contents.crashing_app_process_info.process_path.empty() ? kStrNotAvailable : contents.crashing_app_process_info.process_path);
+    json_[kJsonElemCrashAnalysisFile]["api"] = RgdUtils::GetApiString(contents.api_info.apiType);
+
+    // PDB files.
+    if (contents.api_info.apiType != TraceApiType::DIRECTX_12)
+    {
+        json_[kJsonElemCrashAnalysisFile][kJsonElemPdbFiles] = kStrNotAvailable;
+    }
+    else if (debug_info_files.empty())
+    {
+        json_[kJsonElemCrashAnalysisFile][kJsonElemPdbFiles] = "no PDB files found.";
+    }
+    else
+    {
+        json_[kJsonElemCrashAnalysisFile][kJsonElemPdbFiles] = nlohmann::json::array();
+        for (const std::string& pdb_file : debug_info_files)
+        {
+            json_[kJsonElemCrashAnalysisFile][kJsonElemPdbFiles].push_back(pdb_file);
+        }
+    }
+
+    // Search paths (only when extended output is enabled).
+    if (user_config.is_extended_output)
+    {
+        // PDB search paths from .rgd file.
+        if (contents.api_info.apiType != TraceApiType::DIRECTX_12)
+        {
+            json_[kJsonElemCrashAnalysisFile][kJsonElemPdbSearchPathsFromRgdFile] = kStrNotAvailable;
+        }
+        else if (contents.rgd_extended_info.pdb_search_paths.empty())
+        {
+            json_[kJsonElemCrashAnalysisFile][kJsonElemPdbSearchPathsFromRgdFile] = kStrNone;
+        }
+        else
+        {
+            json_[kJsonElemCrashAnalysisFile][kJsonElemPdbSearchPathsFromRgdFile] = nlohmann::json::array();
+
+            for (const std::string& path : contents.rgd_extended_info.pdb_search_paths)
+            {
+                json_[kJsonElemCrashAnalysisFile][kJsonElemPdbSearchPathsFromRgdFile].push_back(path);
+            }
+        }
+
+        // PDB search paths from CLI.
+        if (contents.api_info.apiType != TraceApiType::DIRECTX_12)
+        {
+            json_[kJsonElemCrashAnalysisFile][kJsonElemPdbSearchPathsFromRgdCli] = kStrNotAvailable;
+        }
+        else if (user_config.pdb_dir.empty())
+        {
+            json_[kJsonElemCrashAnalysisFile][kJsonElemPdbSearchPathsFromRgdCli] = kStrNone;
+        }
+        else
+        {
+            json_[kJsonElemCrashAnalysisFile][kJsonElemPdbSearchPathsFromRgdCli] = nlohmann::json::array();
+
+            for (const std::string& path : user_config.pdb_dir)
+            {
+                json_[kJsonElemCrashAnalysisFile][kJsonElemPdbSearchPathsFromRgdCli].push_back(path);
+            }
+        }
+    }
+
+    // Hardware Crash Analysis status.
+    json_[kJsonElemCrashAnalysisFile]["hardware_crash_analysis"] = contents.rgd_extended_info.is_hca_enabled ? kStrEnabled : kStrDisabled;
 }
 
 void RgdSerializerJson::SetSystemInfoData(const Config& user_config, const system_info_utils::SystemInfo& system_info)
@@ -66,7 +131,7 @@ void RgdSerializerJson::SetSystemInfoData(const Config& user_config, const syste
     // Driver info.
     json_[kJsonElemSystemInfo][kJsonElemDriverInfo]["packaging_version"] = system_info.driver.packaging_version;
     json_[kJsonElemSystemInfo][kJsonElemDriverInfo]["software_version"] = system_info.driver.software_version;
-    json_[kJsonElemSystemInfo][kJsonElemDriverInfo]["dev_driver_version"] = system_info.devdriver.tag;
+    json_[kJsonElemSystemInfo][kJsonElemDriverInfo]["dev_driver_version"] = (system_info.devdriver.tag.empty() ? kStrNotAvailable : system_info.devdriver.tag);
 
     // Operating system info.
     json_[kJsonElemSystemInfo]["os"]["name"] = system_info.os.name;

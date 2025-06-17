@@ -172,6 +172,6 @@ The general time format used by RGD is `<hh:mm:ss:clks>` which stands for `<hour
 
 ## Capturing AMD GPU Crash Dump Files ##
 
-* To learn how to get started with RGD, see the [RGD quickstart guide](documentation/source/index.rst). More information can be found on the [RGD help manual](documentation/source/help_manual.rst).
+* To learn how to get started with RGD, see the [RGD quickstart guide](https://gpuopen.com/manuals/rgd_manual/rgd_manual-index/#quickstart-guide). More information can be found on the [RGD help manual](https://gpuopen.com/manuals/rgd_manual/rgd_manual-help_manual/#help-manual).
 * The complete documentation can be found in the [Radeon Developer Tool Suite archive](https://gpuopen.com/rdts-windows/) under ``help/rgd/index.html``.
 

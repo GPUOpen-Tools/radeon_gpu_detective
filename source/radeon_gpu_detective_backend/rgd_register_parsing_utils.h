@@ -11,7 +11,7 @@
 // Local.
 #include "rgd_data_types.h"
 
-// Wave registers offsets for RDNA3 and RDNA2.
+// Wave registers offsets for RDNA2, RDNA3 and STRIX1.
 enum class WaveRegistersRdna2AndRdna3 : uint32_t
 {
     kSqWaveStatus       = 0x0102,

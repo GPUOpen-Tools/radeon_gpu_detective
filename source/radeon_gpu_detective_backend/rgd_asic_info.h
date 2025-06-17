@@ -19,7 +19,8 @@ namespace ecitrace
         kNavi1,  ///< The Navi1 series of cards.
         kNavi2,  ///< The Navi2 series of cards.
         kNavi3,  ///< The Navi3 series of cards.
-        kNavi4   ///< The Navi4 series of cards.
+        kNavi4,  ///< The Navi4 series of cards.
+        kStrix1  ///< The Strix1 APUs.
     };
 
     /// @brief An utility function that help with determining info about the ASIC.

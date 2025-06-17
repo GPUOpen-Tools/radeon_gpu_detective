@@ -64,11 +64,18 @@ private:
     bool BuildCmdBufferExecutionMarkerTreeNodes(const Config& user_config, const CrashData& umd_crash_data,
         const std::unordered_map <uint64_t, std::vector<size_t>>& cmd_buffer_events);
 
+    void UpdateMarkerTreeNodesForNestedCmdBuffer(const Config& user_config);
+
     // Map to store command buffer id -> marker value -> marker execution status.
     std::unordered_map <uint64_t, std::unordered_map<uint32_t, MarkerExecutionStatus>> command_buffer_marker_status_;
 
     // Map to store command buffer id -> ExecMarkerTreeSerializer mapping.
     std::unordered_map <uint64_t, std::unique_ptr<ExecMarkerTreeSerializer>> command_buffer_exec_tree_;
+
+    std::vector<uint64_t> cmd_buffer_ids_create_ordered_;
+
+    // Set to store nested command buffer ids.
+    std::unordered_set<uint64_t> nested_cmd_buffer_ids_set;
 
     // Map to store command buffer info.
     std::unordered_map<uint64_t, CmdBufferInfo> cmd_buffer_info_map_;

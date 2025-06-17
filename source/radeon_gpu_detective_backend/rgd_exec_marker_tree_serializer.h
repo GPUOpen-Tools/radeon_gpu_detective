@@ -53,7 +53,10 @@ struct MarkerNode
     uint8_t marker_info[MarkerInfoBufferSize] = { 0 };
 
     // Child markers (markers that started after this marker began and before it ended).
-    std::vector<MarkerNode> child_markers;
+    std::vector<std::shared_ptr<MarkerNode>> child_markers;
+
+    // One marker can have multiple 'Nested Command Buffers Info' events. Store each command buffer ID in a vector and marker_info will only store the most recent command buffer info event data.
+    std::vector<uint32_t> nested_cmd_buffer_ids;
 
     // Counter to store no of consecutive nodes with same status on its level.
     uint64_t repeating_same_status_count = 0;
@@ -70,6 +73,9 @@ struct MarkerNode
 
     // Crashing shader information for this marker. Updated only when the marker is associated with a crashing shader.
     RgdCrashingShaderInfo crashing_shader_info;
+
+    // Nested command buffer queue type.
+    uint8_t nested_cmd_buffer_queue_type = 0;
 };
 
 // Builds a tree representation of the execution markers for a single command buffer.
@@ -115,17 +121,45 @@ public:
     // Validate the 'begin' execution markers for matching 'end' marker and report the missing 'end' markers.
     void ValidateExecutionMarkers();
 
+    // Update nested command buffer flag to true if the command buffer is a nested command buffer; false otherwise.
+    void SetIsNestedCmdBuffer(bool is_nested_cmd_buffer);
+
+    // Get the flag to check if the command buffer is a nested command buffer.
+    bool IsNestedCmdBuffer() const;
+    
+    // Update the flag to true if the command buffer executes one or more nested command buffers; false otherwise.
+    void SetIsExecutesNestedCmdBuffer(bool is_execute_nested_cmd_buffer);
+
+    // Get the flag to check if the command buffer executes one or more nested command buffers.
+    bool IsExecutesNestedCmdBuffer() const;
+
+    // Get the list of nested command buffer IDs for this command buffer.
+    std::vector<uint64_t> GetNestedCmdBufferIdsForExecTree() const;
+
+    // Update the nested command buffer marker nodes map.
+    bool UpdateNestedCmdBufferMarkerNodes(uint64_t cmd_buffer_id, ExecMarkerTreeSerializer& nested_cmd_buffer_tree, uint8_t nested_command_buffer_queue_type);
+
+    // Return the status of the given marker node.
+    MarkerExecutionStatus GetMarkerNodeStatus(const MarkerNode& node) const;
+
 private:
     const uint64_t kmd_crash_value_begin_ = 0;
     const uint64_t kmd_crash_value_end_ = 0;
-    std::vector<MarkerNode> marker_nodes_;
+    std::vector<std::shared_ptr<MarkerNode>> marker_nodes_;
     std::vector<MarkerNode*> current_stack_;
+    std::unordered_map<uint64_t, MarkerNode*> nested_cmd_buffer_nodes_map_;
     std::unordered_map<uint32_t, MarkerExecutionStatus> cmd_buffer_exec_status_;
     std::string missing_markers_info_txt_;
 
     // True if the text visualization is for a file - we use special characters that
     // render more nicely in files, but are not rendered nicely on Windows console.
     bool is_file_visualization_ = false;
+
+    // Set to True, when the command buffer is a nested command buffer.
+    bool is_nested_cmd_buffer_ = false;
+
+    // Set to True, when this command buffer executes one or more nested command buffers.
+    bool is_executes_nested_cmd_buffer_ = false;
 
 #ifdef _DEBUG
     // Tracking the most recent timestamp for input validation.

@@ -26,7 +26,7 @@ public:
     ~RgdEnhancedCrashInfoSerializer();
 
     /// @brief Initialize the enhanced crash info serializer.
-    bool Initialize(RgdCrashDumpContents& rgd_crash_dump_contents, bool is_page_fault);
+    bool Initialize(const Config& user_config, RgdCrashDumpContents& rgd_crash_dump_contents, bool is_page_fault);
 
     /// @brief Serialize the code object information and get in-flight shader info.
     bool GetInFlightShaderInfo(const Config& user_config, std::string& out_text);
@@ -39,6 +39,9 @@ public:
 
     /// @brief Get the complete disassembly of the shaders that were in flight at the time of the crash.
     bool GetCompleteDisassembly(const Config& user_config, std::string& out_text);
+
+    /// @brief Get the list of debug info files for the shaders that were in flight at the time of the crash.
+    std::vector<std::string> GetDebugInfoFiles() const;
 
 private:
     class Impl;

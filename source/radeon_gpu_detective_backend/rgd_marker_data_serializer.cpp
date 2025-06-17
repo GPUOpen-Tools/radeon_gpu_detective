@@ -129,33 +129,37 @@ bool ExecMarkerDataSerializer::GenerateExecutionMarkerTree(const Config& user_co
 
     for (const std::pair<const uint64_t, std::unique_ptr<ExecMarkerTreeSerializer>>& cmd_buffer_item : command_buffer_exec_tree_)
     {
-        // Generate status string.
-        txt_tree << "Command Buffer ID: 0x" << std::hex << cmd_buffer_item.first << std::dec;
-        
-        std::stringstream txt_cmd_buffer_info;
-        if (cmd_buffer_info_map_.find(cmd_buffer_item.first) != cmd_buffer_info_map_.end())
+        assert(cmd_buffer_item.second != nullptr);
+        if (cmd_buffer_item.second != nullptr && !cmd_buffer_item.second->IsNestedCmdBuffer())
         {
-            // Print command buffer info. Example: (Queue type: Direct)
-            const CmdBufferInfo& cmd_buffer_info = cmd_buffer_info_map_[cmd_buffer_item.first];
-            txt_cmd_buffer_info << " (Queue type: " << RgdUtils::GetCmdBufferQueueTypeString((CmdBufferQueueType)cmd_buffer_info.queue) << ")";
-            txt_tree << txt_cmd_buffer_info.str();
-        }
-        txt_tree << std::endl;
-        txt_tree << "======================";
-        uint64_t cmd_buffer_id = cmd_buffer_item.first;
-        while (cmd_buffer_id > 0xF)
-        {
-            txt_tree << "=";
-            cmd_buffer_id /= 0xF;
-        }
+            // Generate status string.
+            txt_tree << "Command Buffer ID: 0x" << std::hex << cmd_buffer_item.first << std::dec;
 
-        for (size_t cmd_buffer_info_text_length = txt_cmd_buffer_info.str().length(); cmd_buffer_info_text_length > 0; --cmd_buffer_info_text_length)
-        {
-            txt_tree << "=";
-        }
+            std::stringstream txt_cmd_buffer_info;
+            if (cmd_buffer_info_map_.find(cmd_buffer_item.first) != cmd_buffer_info_map_.end())
+            {
+                // Print command buffer info. Example: (Queue type: Direct)
+                const CmdBufferInfo& cmd_buffer_info = cmd_buffer_info_map_[cmd_buffer_item.first];
+                txt_cmd_buffer_info << " (Queue type: " << RgdUtils::GetCmdBufferQueueTypeString((CmdBufferQueueType)cmd_buffer_info.queue) << ")";
+                txt_tree << txt_cmd_buffer_info.str();
+            }
+            txt_tree << std::endl;
+            txt_tree << "======================";
+            uint64_t cmd_buffer_id = cmd_buffer_item.first;
+            while (cmd_buffer_id > 0xF)
+            {
+                txt_tree << "=";
+                cmd_buffer_id /= 0xF;
+            }
 
-        txt_tree << std::endl;
-        txt_tree << command_buffer_exec_tree_[cmd_buffer_item.first]->TreeToString(user_config) << std::endl;
+            for (size_t cmd_buffer_info_text_length = txt_cmd_buffer_info.str().length(); cmd_buffer_info_text_length > 0; --cmd_buffer_info_text_length)
+            {
+                txt_tree << "=";
+            }
+
+            txt_tree << std::endl;
+            txt_tree << command_buffer_exec_tree_[cmd_buffer_item.first]->TreeToString(user_config) << std::endl;
+        }
     }
 
     marker_tree = txt_tree.str();
@@ -223,16 +227,20 @@ bool ExecMarkerDataSerializer::GenerateExecutionMarkerSummaryList(const Config& 
 
     for (const std::pair<const uint64_t, std::unique_ptr<ExecMarkerTreeSerializer>>& cmd_buffer_item : command_buffer_exec_tree_)
     {
-        txt << "Command Buffer ID: 0x" << std::hex << cmd_buffer_item.first << std::dec << std::endl;
-        txt << "======================";
-        uint64_t cmd_buffer_id = cmd_buffer_item.first;
-        while (cmd_buffer_id > 0xF)
+        assert(cmd_buffer_item.second != nullptr);
+        if (cmd_buffer_item.second != nullptr && !cmd_buffer_item.second->IsNestedCmdBuffer())
         {
-            txt << "=";
-            cmd_buffer_id /= 0xF;
+            txt << "Command Buffer ID: 0x" << std::hex << cmd_buffer_item.first << std::dec << std::endl;
+            txt << "======================";
+            uint64_t cmd_buffer_id = cmd_buffer_item.first;
+            while (cmd_buffer_id > 0xF)
+            {
+                txt << "=";
+                cmd_buffer_id /= 0xF;
+            }
+            txt << std::endl;
+            txt << command_buffer_exec_tree_[cmd_buffer_item.first]->SummaryListToString() << std::endl;
         }
-        txt << std::endl;
-        txt << command_buffer_exec_tree_[cmd_buffer_item.first]->SummaryListToString() << std::endl;
     }
 
     marker_summary_list_txt = txt.str();
@@ -444,6 +452,14 @@ bool ExecMarkerDataSerializer::BuildCmdBufferExecutionMarkerTreeNodes(const Conf
                 command_buffer_exec_tree_[debug_nop_event.cmdBufferId] = std::make_unique<ExecMarkerTreeSerializer>(user_config, cmd_buffer_exec_status_map,
                     debug_nop_event.beginTimestampValue, debug_nop_event.endTimestampValue);
 
+                cmd_buffer_ids_create_ordered_.push_back(debug_nop_event.cmdBufferId);
+
+                if (nested_cmd_buffer_ids_set.find(debug_nop_event.cmdBufferId) != nested_cmd_buffer_ids_set.end())
+                {
+                    // This command buffer is a nested command buffer.
+                    command_buffer_exec_tree_[debug_nop_event.cmdBufferId]->SetIsNestedCmdBuffer(true);
+                }
+
                 auto iter = cmd_buffer_events.find(debug_nop_event.cmdBufferId);
                 assert(iter != cmd_buffer_events.end());
                 if (iter != cmd_buffer_events.end())
@@ -476,6 +492,10 @@ bool ExecMarkerDataSerializer::BuildCmdBufferExecutionMarkerTreeNodes(const Conf
                                         in_flight_shader_api_pso_hashes_to_shader_info_[pipeline_api_pso_hash].crashing_shader_ids;
                                     crashing_shader_info.api_stages =
                                         in_flight_shader_api_pso_hashes_to_shader_info_[pipeline_api_pso_hash].api_stages;
+                                    crashing_shader_info.source_file_names =
+                                        in_flight_shader_api_pso_hashes_to_shader_info_[pipeline_api_pso_hash].source_file_names;
+                                    crashing_shader_info.source_entry_point_names =
+                                        in_flight_shader_api_pso_hashes_to_shader_info_[pipeline_api_pso_hash].source_entry_point_names;
                                 }
                             }
                             command_buffer_exec_tree_[debug_nop_event.cmdBufferId]->PushMarkerBegin(
@@ -518,6 +538,18 @@ bool ExecMarkerDataSerializer::BuildCmdBufferExecutionMarkerTreeNodes(const Conf
                                 pipeline_api_pso_hash       = pipeline_info->apiPsoHash;
                                 is_shader_in_flight         = IsShaderInFlight(pipeline_api_pso_hash);
                             }
+                            else if (exec_marker_info_header->infoType == ExecutionMarkerInfoType::NestedCmdBuffer)
+                            {
+                                // Update Nested Command Buffer MarkerNode with additional info.
+                                command_buffer_exec_tree_[debug_nop_event.cmdBufferId]->UpdateMarkerInfo(marker_value, exec_marker_info_event.markerInfo);
+
+                                // Mark the relevant command buffer as a nested command buffer.
+                                NestedCmdBufferInfo* nested_cmd_buffer_info = reinterpret_cast<NestedCmdBufferInfo*>(marker_info + sizeof(ExecutionMarkerInfoHeader));
+                                nested_cmd_buffer_ids_set.insert(nested_cmd_buffer_info->nestedCmdBufferId);
+
+                                // Mark that current command buffer executes another nested command buffer.
+                                command_buffer_exec_tree_[debug_nop_event.cmdBufferId]->SetIsExecutesNestedCmdBuffer(true);
+                            }
                         }
                         else if (marker_event_id == UmdEventId::RgdEventExecutionMarkerEnd)
                         {
@@ -528,12 +560,6 @@ bool ExecMarkerDataSerializer::BuildCmdBufferExecutionMarkerTreeNodes(const Conf
                             command_buffer_exec_tree_[debug_nop_event.cmdBufferId]->PushMarkerEnd(curr_marker_event.event_time, marker_value);
                         }
                     }
-
-                    // Build the look ahead counter of consecutive same status nodes on the same level.
-                    command_buffer_exec_tree_[debug_nop_event.cmdBufferId]->UpdateSameStatusMarkerNodesCount();
-
-                    // Validate if any 'Begin' marker is missing  a  matching 'End' marker and report the warnings to the user.
-                    command_buffer_exec_tree_[debug_nop_event.cmdBufferId]->ValidateExecutionMarkers();
                 }
                 else
                 {
@@ -547,10 +573,70 @@ bool ExecMarkerDataSerializer::BuildCmdBufferExecutionMarkerTreeNodes(const Conf
     {
         ret = false;
     }
+    else
+    {
+        // Check if any of the command buffers execute nested command buffers.
+        // If yes, move the Marker Nodes from nested command buffer to the relevant Marker Node of the parent command buffer.
+        // As this process may update the tree structure, it should be completed before calling UpdateSameStatusMarkerNodesCount() function.
+        UpdateMarkerTreeNodesForNestedCmdBuffer(user_config);
+
+        for (const std::pair<const uint64_t, std::unique_ptr<ExecMarkerTreeSerializer>>& pair : command_buffer_exec_tree_)
+        {
+            // 
+            ExecMarkerTreeSerializer& cmd_buffer_tree_serializer = *pair.second;
+
+            // Build the look ahead counter of consecutive same status nodes on the same level.
+            // UpdateSameStatusMarkerNodesCount() should be called after the complete Marker Nodes tree is built and all the required update operations are performaed.
+            // For example UpdateMarkerTreeNodesForNestedCmdBuffer() may update the tree structure, so it is called before UpdateSameStatusMarkerNodesCount().
+            cmd_buffer_tree_serializer.UpdateSameStatusMarkerNodesCount();
+
+            // Validate if any 'Begin' marker is missing  a  matching 'End' marker and report the warnings to the user.
+            cmd_buffer_tree_serializer.ValidateExecutionMarkers();
+        }
+    }
 
     return ret;
 }
 
+void ExecMarkerDataSerializer::UpdateMarkerTreeNodesForNestedCmdBuffer(const Config& user_config)
+{
+    // Iterate through each command buffer in the reverse order of events as received by RGD.
+    for (auto it = cmd_buffer_ids_create_ordered_.rbegin(); it != cmd_buffer_ids_create_ordered_.rend(); ++it)
+    {
+        uint64_t cmd_buffer_id = *it;
+        ExecMarkerTreeSerializer* parent_cmd_buffer_tree_ptr = command_buffer_exec_tree_[cmd_buffer_id].get();
+        assert(parent_cmd_buffer_tree_ptr != nullptr);
+        if (parent_cmd_buffer_tree_ptr != nullptr && parent_cmd_buffer_tree_ptr->IsExecutesNestedCmdBuffer())
+        {
+            // If the current command buffer (parent) executes another command buffer (child) as a nested command buffer and it is in flight at the time of the crash
+            // Move the marker nodes from the nested command buffer as child nodes to the relevant marker node of the parent command buffer.
+
+            // Get the list of nested command buffer IDs for the Execution Marker Tree.
+            std::vector<uint64_t> nested_cmd_buffer_ids_for_exec_tree = parent_cmd_buffer_tree_ptr->GetNestedCmdBufferIdsForExecTree();
+
+            // For each nested command buffer ID, update the marker tree nodes.
+            for (uint64_t nested_cmd_buffer_id : nested_cmd_buffer_ids_for_exec_tree)
+            {
+                auto nested_cmd_buffer_tree_iter = command_buffer_exec_tree_.find(nested_cmd_buffer_id);
+                if (nested_cmd_buffer_tree_iter != command_buffer_exec_tree_.end())
+                {
+                    // Get the nested command buffer queue type.
+                    uint8_t nested_command_buffer_queue_type = 0xf;
+                    assert(cmd_buffer_info_map_.find(nested_cmd_buffer_id) != cmd_buffer_info_map_.end());
+                    if (cmd_buffer_info_map_.find(nested_cmd_buffer_id) != cmd_buffer_info_map_.end())
+                    {
+                        nested_command_buffer_queue_type = cmd_buffer_info_map_[nested_cmd_buffer_id].queue;
+                    }
+                    // Update the marker tree nodes for the nested command buffer.
+                    parent_cmd_buffer_tree_ptr->UpdateNestedCmdBufferMarkerNodes(
+                        nested_cmd_buffer_id, *nested_cmd_buffer_tree_iter->second, nested_command_buffer_queue_type);
+                }
+            }
+        }
+    }
+}
+
+// Returns true if the shader with the given API PSO hash was in flight at the time of the crash.
 bool ExecMarkerDataSerializer::IsShaderInFlight(uint64_t api_pso_hash)
 {
     return in_flight_shader_api_pso_hashes_to_shader_info_.find(api_pso_hash) != in_flight_shader_api_pso_hashes_to_shader_info_.end();

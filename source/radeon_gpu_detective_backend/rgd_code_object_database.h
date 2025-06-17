@@ -17,6 +17,7 @@
 #include "rgd_hash.h"
 #include "rgd_data_types.h"
 #include "rgd_code_object_comgr_handle.h"
+#include "rgd_dxbc_parser.h"
 
 // Holds information about individual shader in a code object disassembly.
 struct RgdShaderInfo
@@ -51,8 +52,29 @@ struct RgdShaderInfo
     // Disassembled instructions block for the shader (used for the JSON output - no post processing required).
     std::vector<std::pair<uint64_t, std::string>> instructions_json_output;
 
+    // DXC dumpbin output for the shader.
+    std::string dxc_dumpbin_output;
+
+    // High-level shader source code extracted from debug information.
+    std::string high_level_source = kStrNotAvailable;
+
+    // Entry name of the shader.
+    std::string entry_point_name = kStrNotAvailable;
+
+    // Shader source file name.
+    std::string source_file_name = kStrNotAvailable;
+
+    // Shader IO and resource binding information.
+    std::string shader_io_and_resource_bindings = kStrNotAvailable;
+
+    // PDB file path for the shader.
+    std::string pdb_file_path;
+
     // Is this a crashing shader.
     bool is_in_flight_shader = false;
+
+    // Was debug info found for this shader.
+    bool has_debug_info = false;
 };
 
 class RgdCodeObjectEntry
@@ -148,6 +170,13 @@ public:
 
     /// @brief Fill in the code object based on the buffer that is assigned to it previously.
     bool Populate();
+
+    /// @brief Extract debug information for shaders if available
+    /// This method will utilize the provided user configuration along with the directories specified.
+    /// @param user_config Configuration for user-specific settings
+    /// @param debug_info_dirs Vector of directories containing debug info files
+    /// @return true if debug info extraction was successful, false otherwise
+    bool ExtractDebugInfo(const Config& user_config, const std::vector<std::string>& debug_info_dirs);
 
     // vector to hold the RGD crashing code object entries.
     std::vector<RgdCodeObjectEntry>              entries_                             = {};

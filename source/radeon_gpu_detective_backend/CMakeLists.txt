@@ -6,6 +6,7 @@
 #=============================================================================
 
 cmake_minimum_required (VERSION 3.10)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 project (rgd_backend)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -16,10 +17,13 @@ include_directories("${PROJECT_SOURCE_DIR}/../../external/rmv/source/parser/")
 include_directories("${PROJECT_SOURCE_DIR}/../../external/rmv/source/backend/")
 include_directories("${PROJECT_SOURCE_DIR}/../../external/third_party/")
 include_directories("${PROJECT_SOURCE_DIR}/../../external/rdf/rdf/inc/")
-include_directories("${PROJECT_SOURCE_DIR}/../../external/comgr_package/comgr_utils/")
+include_directories("${PROJECT_SOURCE_DIR}/../../external/comgr_utils/")
 include_directories("${PROJECT_SOURCE_DIR}/../../external/comgr_package/comgr/include/")
 include_directories(AFTER ${AMDGPU_DIS_INCLUDE_DIR} )
 include_directories(AFTER ${AMD_COMGR_INCLUDE_DIR} )
+
+# Add path to miniz library
+include_directories("${PROJECT_SOURCE_DIR}/../../external/miniz/")
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -43,6 +47,13 @@ file (GLOB RGD_BACKEND_SOURCE
     "../../external/nlohmann/*.hpp"
 )
 
-add_library(${PROJECT_NAME} STATIC ${RGD_BACKEND_SOURCE})
+# Find the miniz library source files
+file (GLOB MINIZ_SOURCE
+    "../../external/third_party/miniz/*.c"
+    "../../external/third_party/miniz/*.h"
+)
+
+# Add miniz source files to the build
+add_library(${PROJECT_NAME} STATIC ${RGD_BACKEND_SOURCE} ${MINIZ_SOURCE})
 
 set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)

@@ -26,11 +26,10 @@ public:
     static bool ToString(const Config& user_config, const system_info_utils::SystemInfo& system_info, const nlohmann::json& driver_experiments_json, std::string& system_info_txt);
 
     // Serialize the input parameters information into a string.
-    static void InputInfoToString(const Config&                        user_config,
-                                  const TraceProcessInfo&              process_info,
-                                  const system_info_utils::SystemInfo& system_info,
-                                  const TraceChunkApiInfo&             api_info,
-                                  std::string&                         input_info_str);
+    static void InputInfoToString(const Config&                   user_config,
+                                  const RgdCrashDumpContents&     contents,
+                                  const std::vector<std::string>& debug_info_files,
+                                  std::string&                    input_info_str);
 
     // Generates a string representing the RgdEvent's header for Umd event, with each line being pushed with the offset tabs.
     static std::string RgdEventHeaderToStringUmd(const RgdEvent& rgd_event, const std::string& offset_tabs);
