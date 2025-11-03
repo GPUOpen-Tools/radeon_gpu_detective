@@ -19,6 +19,7 @@ include_directories("${PROJECT_SOURCE_DIR}/../../external/third_party/")
 include_directories("${PROJECT_SOURCE_DIR}/../../external/rdf/rdf/inc/")
 include_directories("${PROJECT_SOURCE_DIR}/../../external/comgr_utils/")
 include_directories("${PROJECT_SOURCE_DIR}/../../external/comgr_package/comgr/include/")
+include_directories("${PROJECT_SOURCE_DIR}/../../external/isa_spec_manager/include/")
 include_directories(AFTER ${AMDGPU_DIS_INCLUDE_DIR} )
 include_directories(AFTER ${AMD_COMGR_INCLUDE_DIR} )
 
@@ -56,4 +57,30 @@ file (GLOB MINIZ_SOURCE
 # Add miniz source files to the build
 add_library(${PROJECT_NAME} STATIC ${RGD_BACKEND_SOURCE} ${MINIZ_SOURCE})
 
+# Link ISA decoder library
+target_link_libraries(${PROJECT_NAME} isa_decoder)
+
 set_property(TARGET ${PROJECT_NAME} PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+# Include FetchContent module for downloading ISA spec XML files
+include(FetchContent)
+
+set(ISA_DECODER_XML_URL "https://gpuopen.com/download/machine-readable-isa/latest")
+set(ISA_DECODER_XML_DIR "${PROJECT_SOURCE_DIR}/../../external/isa_spec_xml")
+
+FetchContent_Declare(
+    isa_spec_xml
+    URL ${ISA_DECODER_XML_URL}
+    SOURCE_DIR ${ISA_DECODER_XML_DIR}
+    DOWNLOAD_EXTRACT_TIMESTAMP true
+)
+
+message(STATUS "Downloading ${ISA_DECODER_XML_URL} into ${ISA_DECODER_XML_DIR}")
+
+FetchContent_MakeAvailable(isa_spec_xml)
+
+if (EXISTS "${ISA_DECODER_XML_DIR}")
+    message(STATUS "ISA decoder XML directory created successfully at ${ISA_DECODER_XML_DIR}")
+else ()
+    message(FATAL_ERROR "Directory ${ISA_DECODER_XML_DIR} was not created.")
+endif ()

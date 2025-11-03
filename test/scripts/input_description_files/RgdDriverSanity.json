@@ -18,5 +18,25 @@
 			"golden_files_positive": [],
 			"golden_files_negative": []
 		}
+	],
+	"VK": [
+		{
+			"test_name": "OutOfBoundsIndexSizeAndOffset",
+			"crash_test_case": 3,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "ReleaseReferenced",
+			"crash_test_case": 5,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		}
 	]
 }

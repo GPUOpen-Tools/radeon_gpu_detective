@@ -77,7 +77,7 @@ STR_SCRIPT_OPT_MODERN_OUTPUT         = '--modern-output'
 STR_DEFAULT_TEST_DESC_FILE = os.path.join('input_description_files', 'RgdDriverSanity.json')
 
 # Supported API's
-SUPPORTED_APIS   = ["DX12"]
+SUPPORTED_APIS   = ["DX12", "VK"]
 
 # String constants
 STR_RGD_TEST_SUFFIX_PASSED  = "......[PASSED]"
@@ -345,6 +345,16 @@ class TestConfig:
             ret_path = self.set_gpu_trasher_path()
         
         return ret_path
+    
+    def get_vk_crasher_path(self):
+
+        ret_path = None
+        if self.vk_crasher_path is not None:
+            ret_path = self.vk_crasher_path
+        else:
+            ret_path = self.set_vk_crasher_path()
+        
+        return ret_path
             
 
     def set_gpu_trasher_path(self):
@@ -368,6 +378,28 @@ class TestConfig:
                 self.gpu_trasher_path = gpu_trasher_folder[0]
         
         return self.gpu_trasher_path
+
+    def set_vk_crasher_path(self):
+        crash_generator_folder = Path(self.crash_generator_exe_path).parent
+        sample_apps_folder = glob.glob(os.path.join(crash_generator_folder,"sample_apps"))
+        _STR_EXITING_SUFFIX = "Exiting..."
+        if len(sample_apps_folder) == 0:
+            _STR_UNABLE_TO_LOCATE_SAMPLE_APPS_FOLDER_MSG = "Unable to locate the sample apps folder"
+            logger.error(f"{_STR_UNABLE_TO_LOCATE_SAMPLE_APPS_FOLDER_MSG} inside {crash_generator_folder}.")
+            legacy_logger.summary_info(f"{_STR_UNABLE_TO_LOCATE_SAMPLE_APPS_FOLDER_MSG} inside {crash_generator_folder}. {_STR_EXITING_SUFFIX}")
+            exit(1)
+        else:
+            # VK - Vulkan Crash Generator path
+            vk_crasher_folder = glob.glob(os.path.join(sample_apps_folder[0],"VulkanCrashGenerator"))
+            _STR_UNABLE_TO_LOCATE_VKCRASHER_FOLDER_MSG = "Unable to locate the VulkanCrashGenerator folder"
+            if len(vk_crasher_folder) == 0:
+                logger.error(f"{_STR_UNABLE_TO_LOCATE_VKCRASHER_FOLDER_MSG} inside {sample_apps_folder[0]}.")
+                legacy_logger.summary_info(f"{_STR_UNABLE_TO_LOCATE_VKCRASHER_FOLDER_MSG} inside {sample_apps_folder[0]}. {_STR_EXITING_SUFFIX}")
+                exit(1)
+            else:
+                self.vk_crasher_path = vk_crasher_folder[0]
+        
+        return self.vk_crasher_path
                 
     def set_test_config(self, args):
         
@@ -396,6 +428,7 @@ class TestConfig:
             os.mkdir(self.test_output_files_dir)
         
         self.set_gpu_trasher_path()
+        self.set_vk_crasher_path()
         legacy_logger.set_dir_extended_log(self.test_output_files_dir)
 
 class TestCrashCase:
@@ -433,16 +466,21 @@ class TestCrashCase:
         return result.stdout.decode('utf-8'), result.stderr.decode('utf-8'), result.returncode
     
     def get_gtest_filter(self) -> str:
-        filter = "--gtest_filter=*Case" + str(self.case_no)
+        appPrefix = "*"
+        if(self.test_api == "DX12"):
+            appPrefix = "*GpuTrasher"
+        if(self.test_api == "VK"):
+            appPrefix = "*VulkanCrasher"
+        filter = "--gtest_filter=" + appPrefix + "Case" + str(self.case_no)
         filter = filter.replace('.','_')
         return filter
     
-    def move_crash_generator_log(self, test_output_files_dir):
+    def move_crash_generator_log(self, test_output_files_dir, applicationName):
         is_app_crashed = False
-        crash_generator_log_file_path =glob.glob(os.path.join(self.crashing_app_path,"GpuTrasher_DX12*.txt"))
+        crash_generator_log_file_path =glob.glob(os.path.join(self.crashing_app_path,applicationName + "*.txt"))
         case_string = "case" + str(self.case_no)
 
-        #Append 'log' to the GPUTrasher log file name.
+        #Append 'log' to the Application log file name.
         for log_file in crash_generator_log_file_path:
             file_strings = log_file.split('\\')
             log_file_name = file_strings[-1]
@@ -454,7 +492,7 @@ class TestCrashCase:
             os.rename(log_file, new_file_path)
 
         crash_generator_log_file_path = []
-        crash_generator_log_file_path =glob.glob(os.path.join(self.crashing_app_path,"GpuTrasher_DX12*.txt"))
+        crash_generator_log_file_path =glob.glob(os.path.join(self.crashing_app_path,applicationName+"*.txt"))
         # Though glob returns a list of files, it is expected to include only one crash generator log file.
         for log_file in crash_generator_log_file_path:
             is_move_successful = move_folder(source_path=log_file, destination_path=test_output_files_dir)
@@ -496,7 +534,7 @@ class TestCrashCase:
             
         return is_crash_dump
 
-    def launch_crash_generator_exe(self, crash_generator_exe_path, test_output_files_dir):
+    def launch_crash_generator_exe(self, crash_generator_exe_path, test_output_files_dir, applicationName):
         
         # Run Crash Generator App
         start_time = datetime.now()
@@ -512,7 +550,7 @@ class TestCrashCase:
         error_output_lines = self.capture_output_error.splitlines()
 
         # If app is crashed succesfully, a log file is generated under crashing app folder.
-        self.is_app_crashed = self.move_crash_generator_log(test_output_files_dir)
+        self.is_app_crashed = self.move_crash_generator_log(test_output_files_dir, applicationName)
 
         # Crash dump is generated under crash_generator_dir/rgd-dumps-run-timestamp dir
         crash_generator_dir = Path(crash_generator_exe_path).resolve().parent
@@ -523,7 +561,7 @@ class TestCrashCase:
 
         # Some cases are expected not to crash on certain windows OS + GPU config. Then return code will be 0 but no crash dump is generated.
         # Sometimes the crashing app is not launched on time and return code is 1 after the timeout but app crashes.
-        # GPUTrasher can be considered to be crashed successfully when a GPUTrasher log file is generated.
+        # Application can be considered to be crashed successfully when an Application log file is generated.
         # Capture test can be considered a success when a crash dump is generated.
         if return_code == 0 or self.is_crash_dump_generated:
             legacy_logger.summary_info(f"{_STR_CAPTURE_TEST}:{STR_RGD_TEST_SUFFIX_PASSED}")
@@ -532,10 +570,10 @@ class TestCrashCase:
                 logger.test_msg(f"Crash dump file generated successfully for test \"{self.test_name}\".")
             
         elif self.is_app_crashed:
-            # GPUTrasher crashed but no crash dump file generated - capture test failure.
+            # Application crashed but no crash dump file generated - capture test failure.
             self.is_capture_test_passed = False
             legacy_logger.summary_info(f"{_STR_CAPTURE_TEST}:{STR_RGD_TEST_SUFFIX_FAILED} (Return code: {str(return_code)})")
-            legacy_logger.capture_info(f"{_STR_CAPTURE_TEST_FAILED_MSG} - GPUTrasher crashed but no crash dump generated.")
+            legacy_logger.capture_info(f"{_STR_CAPTURE_TEST_FAILED_MSG} - Application crashed but no crash dump generated.")
             if self.capture_output_error:
                 for line in error_output_lines:
                     if STR_ERROR in line:
@@ -543,9 +581,9 @@ class TestCrashCase:
             logger.test_fail(f"Crash dump file not generated for test \"{self.test_name}\".")
         
         else:
-            # GPUTrasher could not be launched or it was launched but did not crash when it was expected to crash.
+            # Application could not be launched or it was launched but did not crash when it was expected to crash.
             self.is_capture_test_passed = False
-            _STR_GPUTRASHER_DID_NOT_CRASH_MSG = "GPUTrasher could not be launched or it was launched but did not crash as expected"
+            _STR_APPLICATION_DID_NOT_CRASH_MSG = "Application could not be launched or it was launched but did not crash as expected"
             legacy_logger.summary_info(f"{_STR_CAPTURE_TEST}:{STR_RGD_TEST_SUFFIX_FAILED} (Return code: {str(return_code)})")
             legacy_logger.capture_info(f"{_STR_CAPTURE_TEST_FAILED_MSG}.")
             if self.capture_output_error:
@@ -726,6 +764,8 @@ class TestDriver:
             # Run tests for all APIs provided in this test descriptor.
             for api, test_set in api_tests_set.items():
                 logger.test_msg(f"Running tests for API - {api}")
+                if api not in self.test_config.test_api:
+                    continue
                 if api not in SUPPORTED_APIS:
                     logger.critical(f"{api} is not supported. Supported APIs - {get_supported_api_str()}")
                 else:
@@ -744,14 +784,21 @@ class TestDriver:
                                                                 verify_crash_dump=test.get('verify_crash_dump', False),
                                                                 verify_rgd_output=test.get('verify_rgd_output', False))
 
-                                test_crash_case.crashing_app_path = self.test_config.get_gpu_trasher_path()
+                                applicationName = "unknown"
+                                if(api == "DX12"):
+                                    test_crash_case.crashing_app_path = self.test_config.get_gpu_trasher_path()
+                                    applicationName = "GpuTrasher_DX12"
+                                if(api == "VK"):
+                                    test_crash_case.crashing_app_path = self.test_config.get_vk_crasher_path()
+                                    applicationName = "Vulkan_Crash_Generator"
+
                                 if test.get('page_fault_case', False):
                                     test_crash_case.is_page_fault_case = True
 
                                 self.crash_cases.append(test_crash_case)
-                                
                                 test_crash_case.launch_crash_generator_exe(self.test_config.crash_generator_exe_path,
-                                                                                self.test_config.test_output_files_dir)
+                                                                                self.test_config.test_output_files_dir,
+                                                                                applicationName)
                                 
                                 if test_crash_case.is_capture_test_passed:
                                     if test_crash_case.is_crash_dump_generated:
@@ -933,7 +980,7 @@ if __name__ == "__main__":
     parser.add_argument(STR_SCRIPT_OPT_RGD_TEST_PATH, type=str, default=STR_DEFAULT_RGD_TEST_PATH, help="Path to the RGD Test CLI.")
     parser.add_argument(STR_SCRIPT_OPT_RGD_PATH, type=str, default=STR_DEFAULT_RGD_CLI_PATH, help="Path to the RGD CLI.")
     parser.add_argument(STR_SCRIPT_OPT_RETAIN_OUTPUT, action='store_true', default=True, help="If set to 'False', when all tests pass, artifacts created for each test run are deleted after successful logging of the results. By default, it is set to 'True' and test artifacts created for all the test runs are retained.")
-    parser.add_argument(STR_SCRIPT_OPT_TEST_API, action='append', help='Currently only DX12 is supported')
+    parser.add_argument(STR_SCRIPT_OPT_TEST_API, action='append', help='Currently DX12 and VK are supported')
     parser.add_argument(STR_SCRIPT_OPT_VERBOSE, action='store_true', default=False, help='If specified, console output will include more verbose level information for the tests.')
     parser.add_argument(STR_SCRIPT_OPT_MODERN_OUTPUT, action='store_true', default=False, help='If specified, modernized logging format will be used instead of legacy output format for both file and console outputs.')
     

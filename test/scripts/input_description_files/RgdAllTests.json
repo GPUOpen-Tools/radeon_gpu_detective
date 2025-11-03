@@ -208,5 +208,250 @@
 			"golden_files_positive": [],
 			"golden_files_negative": []
 		}
+	],
+	"VK": [
+		{
+			"test_name": "EndlessLoopPS",
+			"crash_test_case": 1,
+			"page_fault_case": false,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "EndlessLoopSingleVertex",
+			"crash_test_case": 2,
+			"page_fault_case": false,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "OutOfBoundsIndexSizeAndOffset",
+			"crash_test_case": 3,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "CopyWrongRanges",
+			"crash_test_case": 4,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "ReleaseReferenced",
+			"crash_test_case": 5,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "ReleaseUniformBufferNonLocal",
+			"crash_test_case": 6,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "ReleaseUniformBufferLocal",
+			"crash_test_case": 7,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "ReleaseTexture",
+			"crash_test_case": 8,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "ReleaseTexture_4thDraw",
+			"crash_test_case": 9,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "ReleaseReservedTexture",
+			"crash_test_case": 10,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "ClearAfterRelease",
+			"crash_test_case": 11,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "MaxMultiDrawIndirect",
+			"crash_test_case": 12,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "ReleaseIndirectBufferMemory",
+			"crash_test_case": 13,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "DispatchWorkgroupLimit",
+			"crash_test_case": 14,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "DispatchComputeInfinite",
+			"crash_test_case": 15,
+			"page_fault_case": false,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "DispatchComputeReleaseTexture",
+			"crash_test_case": 16,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "MeshWorkgroupOverflow",
+			"crash_test_case": 17,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "MeshShaderInfiniteLoop",
+			"crash_test_case": 18,
+			"page_fault_case": false,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "MeshShaderReleaseSSBO",
+			"crash_test_case": 19,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "OOBDynamicDescriptorsetOffset",
+			"crash_test_case": 20,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "BLASUseIncorrectScratchDataReference",
+			"crash_test_case": 21,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "TLASUseIncorrectAccelerationStructureReference",
+			"crash_test_case": 22,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "TLASUseIncorrectAccelerationStructureReference",
+			"crash_test_case": 23,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "DestroyBLAS",
+			"crash_test_case": 24,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "DestroyTLAS",
+			"crash_test_case": 25,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "PushConstantOutofRange",
+			"crash_test_case": 26,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		},
+		{
+			"test_name": "ReleaseTextureSecondary",
+			"crash_test_case": 27,
+			"page_fault_case": true,
+			"verify_crash_dump": true,
+			"verify_rgd_cli_output": false,
+			"golden_files_positive": [],
+			"golden_files_negative": []
+		}
 	]
 }

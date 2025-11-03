@@ -58,6 +58,32 @@ namespace {
     constexpr const char* kMsgFailedToFindSource = "failed to find source contents for file: ";
     constexpr const char* kMsgSuccessExtractSource = "successfully extracted source code from PDB file: ";
     constexpr const char* kMsgNoSourceFiles = "no source files found in PDB file: ";
+
+    // Helper function to escape special regex characters in a string.
+    std::string EscapeRegexSpecialChars(const std::string& input)
+    {
+        std::string result;
+        
+        // Reserve space to avoid reallocations.
+        result.reserve(input.length() * 2);
+        
+        for (char c : input)
+        {
+            // Escape regex special characters.
+            switch (c)
+            {
+                case '\\': case '^': case '$': case '.': case '|': case '?': case '*':
+                case '+': case '(': case ')': case '[': case ']': case '{': case '}':
+                    result += '\\';
+                    result += c;
+                    break;
+                default:
+                    result += c;
+                    break;
+            }
+        }
+        return result;
+    }
 }
 
 // Initialize static regex patterns.
@@ -194,7 +220,9 @@ bool RgdDxbcParser::CheckDigestMatch(const std::string& file_path, uint64_t hash
         // For the input file, check magic number to be 'DXBC' and ignore the file if it doesn't match.
         // If PDBs are generated using '-Zi -Qembed_debug', a single file with magic number 'DXBC' is created for each shader and it includes the debug info.
         // If PDBs are generated using '-Zi -Qsource_in_debug_module', a file with magic number 'DXBC' along with a separate PDB file is created for each shader.
-        // If PDBs are generated using '-Zs', a file with magic number 'DXBC' along with a separate slim/small PDB file is created for each shader. This slim pdb file only contains the shader source code and no debug info.
+        // If PDBs are generated using '-Zs', a file with magic number 'DXBC' along with a separate slim/small PDB file is created for each shader.
+        // This slim pdb file only contains the shader source code and no debug info.
+        
         // Read the header.
         DxbcHeader header;
         if (!file.read(reinterpret_cast<char*>(&header), sizeof(header)))
@@ -358,7 +386,30 @@ bool RgdDxbcParser::FindSourceFileName(const std::unordered_map<std::string, std
 
 std::regex RgdDxbcParser::CreateFileContentPattern(const std::string& source_file_name) const
 {
-    return std::regex("!\\{!\"" + source_file_name + "\", !\"([\\s\\S]+?)\"\\}");
+    std::regex file_content_pattern;
+    try
+    {
+        // Escape special regex characters in the source file name to prevent regex compilation errors.
+        std::string escaped_filename = EscapeRegexSpecialChars(source_file_name);
+        file_content_pattern = std::regex("!\\{!\"" + escaped_filename + "\", !\"([\\s\\S]+?)\"\\}");
+    }
+    catch (const std::regex_error& e)
+    {
+        // If regex compilation still fails, log an error and return a dummy regex.
+        if (is_verbose_)
+        {
+            std::stringstream error_msg;
+            error_msg << "failed to create regex pattern for source file '" << source_file_name 
+                      << "': " << e.what();
+            RgdUtils::PrintMessage(error_msg.str().c_str(), RgdMessageType::kError, is_verbose_);
+        }
+        
+        // Return a regex that will never match to gracefully handle the error.
+        // Negative lookahead that never matches.
+        file_content_pattern = std::regex("(?!)");
+    }
+
+    return file_content_pattern;
 }
 
 bool RgdDxbcParser::FindSourceContents(
@@ -368,43 +419,73 @@ bool RgdDxbcParser::FindSourceContents(
 {
     bool result = false;
     std::unordered_map<std::string, std::string>::const_iterator source_contents_it = line_map.find(kDxSourceContentsTag);
+    
     if (source_contents_it != line_map.end()) 
     {
         std::string content_refs = source_contents_it->second;
 
-        // Extract all content references.
-        std::sregex_iterator it(content_refs.begin(), content_refs.end(), kContentRefPattern);
-        std::sregex_iterator end;
-        
-        // Create regex pattern for this specific source file.
-        std::regex file_content_pattern = CreateFileContentPattern(source_file_name);
-        
-        while (it != end && !result) 
+        try
         {
-            std::smatch match = *it;
-            std::string content_line = "!" + match[1].str();
-            std::unordered_map<std::string, std::string>::const_iterator content_it = line_map.find(content_line);
+            // Extract all content references.
+            std::sregex_iterator it(content_refs.begin(), content_refs.end(), kContentRefPattern);
+            std::sregex_iterator end;
             
-            if (content_it != line_map.end()) 
+            // Create regex pattern for this specific source file.
+            std::regex file_content_pattern = CreateFileContentPattern(source_file_name);
+            
+            // Search through all content references until we find our source file.
+            while (it != end && !result) 
             {
-                // Check if this content entry is for our main file.
-                std::smatch content_match;
-                if (std::regex_search(content_it->second, content_match, file_content_pattern)) 
+                std::smatch match = *it;
+                std::string content_line = "!" + match[1].str();
+                std::unordered_map<std::string, std::string>::const_iterator content_it = line_map.find(content_line);
+                
+                if (content_it != line_map.end()) 
                 {
-                    // Extract the source code (unescape escape sequences).
-                    high_level_source = content_match[1].str();
+                    // Check if this content entry is for our main file.
+                    std::smatch content_match;
+                    if (std::regex_search(content_it->second, content_match, file_content_pattern)) 
+                    {
+                        // Extract the source code (unescape escape sequences).
+                        high_level_source = content_match[1].str();
 
-                    // Unescape common escape sequences using static regex patterns.
-                    high_level_source = std::regex_replace(high_level_source, kNewlinePattern, "\n");
-                    high_level_source = std::regex_replace(high_level_source, kTabPattern, "\t");
-                    high_level_source = std::regex_replace(high_level_source, kQuotePattern, "\"");
-                    high_level_source = std::regex_replace(high_level_source, kHexNewlinePattern, "\n");
-                    result = true;
+                        // Unescape common escape sequences using static regex patterns.
+                        high_level_source = std::regex_replace(high_level_source, kNewlinePattern, "\n");
+                        high_level_source = std::regex_replace(high_level_source, kTabPattern, "\t");
+                        high_level_source = std::regex_replace(high_level_source, kQuotePattern, "\"");
+                        high_level_source = std::regex_replace(high_level_source, kHexNewlinePattern, "\n");
+                        result = true;
+                    }
                 }
+                ++it;
             }
-            ++it;
+        }
+        catch (const std::regex_error& e)
+        {
+            // Handle regex errors gracefully
+            if (is_verbose_)
+            {
+                std::stringstream error_msg;
+                error_msg << "regex error while processing source file '" << source_file_name 
+                          << "': " << e.what();
+                RgdUtils::PrintMessage(error_msg.str().c_str(), RgdMessageType::kError, is_verbose_);
+            }
+            result = false;
+        }
+        catch (const std::exception& e)
+        {
+            // Handle other potential exceptions
+            if (is_verbose_)
+            {
+                std::stringstream error_msg;
+                error_msg << "unexpected error while processing source file '" << source_file_name 
+                          << "': " << e.what();
+                RgdUtils::PrintMessage(error_msg.str().c_str(), RgdMessageType::kError, is_verbose_);
+            }
+            result = false;
         }
     }
+    
     return result;
 }
 

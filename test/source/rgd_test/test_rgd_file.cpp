@@ -19,7 +19,10 @@
 #include "rdf/rdf/inc/amdrdf.h"
 
 // System info.
+#pragma warning(push)
+#pragma warning(disable : 4201)  // nonstandard extension used: nameless struct/union.
 #include "system_info_utils/source/system_info_reader.h"
+#pragma warning(pop)
 
 TestRgdFile::TestRgdFile(const std::string& path) : file_path_(path) {}
 
@@ -156,6 +159,9 @@ bool TestRgdFile::IsMarkerContextFound()
         {
             const CrashAnalysisExecutionMarkerInfo& exec_marker_info_event = static_cast<const CrashAnalysisExecutionMarkerInfo&>(*curr_marker_event.rgd_event);
             uint32_t                                marker_value           = exec_marker_info_event.marker;
+            
+            // Suppress warning for unused variable.
+            (void)marker_value;
 
             uint8_t*                   marker_info             = const_cast<uint8_t*>(exec_marker_info_event.markerInfo);
             ExecutionMarkerInfoHeader* exec_marker_info_header = reinterpret_cast<ExecutionMarkerInfoHeader*>(marker_info);

@@ -14,6 +14,8 @@
 #include <string>
 #include <sstream>
 #include <cassert>
+#include <iostream>
+#include <fstream>
 
 // *** INTERNALLY-LINKED AUXILIARY CONSTANTS - BEGIN ***
 
@@ -24,6 +26,22 @@ static const char* kJsonElemPdbFiles                  = "pdb_files";
 static const char* kJsonElemCrashAnalysisFile         = "crash_analysis_file";
 static const char* kJsonElemPdbSearchPathsFromRgdFile = "pdb_search_paths_from_rgd_file";
 static const char* kJsonElemPdbSearchPathsFromRgdCli  = "pdb_search_paths_from_rgd_cli";
+
+// GPR data JSON keys - optimized string constants.
+static const char* kJsonElemGprTimestamp       = "timestamp";
+static const char* kJsonElemGprType           = "type";
+static const char* kJsonElemGprShaderId       = "shader_id";
+static const char* kJsonElemGprSeId           = "se_id";
+static const char* kJsonElemGprSaId           = "sa_id";
+static const char* kJsonElemGprWgpId          = "wgp_id";
+static const char* kJsonElemGprSimdId         = "simd_id";
+static const char* kJsonElemGprWaveId         = "wave_id";
+static const char* kJsonElemGprWorkItem       = "work_item";
+static const char* kJsonElemGprRegistersToRead = "registers_to_read";
+static const char* kJsonElemGprRegisterValues = "register_values";
+static const char* kJsonElemGprRawData        = "raw_vgpr_and_sgpr_data";
+static const char* kJsonElemGprTypeVgpr       = "VGPR";
+static const char* kJsonElemGprTypeSgpr       = "SGPR";
 
 // *** INTERNALLY-LINKED AUXILIARY CONSTANTS - ENDS ***
 
@@ -115,6 +133,9 @@ void RgdSerializerJson::SetInputInfo(const Config& user_config, const RgdCrashDu
 
     // Hardware Crash Analysis status.
     json_[kJsonElemCrashAnalysisFile]["hardware_crash_analysis"] = contents.rgd_extended_info.is_hca_enabled ? kStrEnabled : kStrDisabled;
+
+    // SGPR/VGPR collection status.
+    json_[kJsonElemCrashAnalysisFile]["sgpr_vgpr_collection"] = contents.rgd_extended_info.is_capture_sgpr_vgpr_data ? kStrEnabled : kStrDisabled;
 }
 
 void RgdSerializerJson::SetSystemInfoData(const Config& user_config, const system_info_utils::SystemInfo& system_info)
@@ -552,12 +573,112 @@ void RgdSerializerJson::SetShaderInfo(const Config& user_config, RgdEnhancedCras
     }
 }
 
+void RgdSerializerJson::SetGprData(const CrashData& kmd_crash_data)
+{
+    bool should_process = true;
+    
+    // Check if no events.
+    if (kmd_crash_data.events.empty())
+    {
+        should_process = false;
+    }
+
+    const size_t total_events = should_process ? kmd_crash_data.events.size() : 0;
+    const uint8_t gpr_event_id = uint8_t(KmdEventId::SgprVgprRegisters);
+    
+    // Two-pass algorithm to pre-count GPR events for exact allocation.
+    size_t gpr_event_count = 0;
+    if (should_process)
+    {
+        for (size_t i = 0; i < total_events; ++i)
+        {
+            const RgdEventOccurrence& current_event = kmd_crash_data.events[i];
+            if (current_event.rgd_event != nullptr && 
+                current_event.rgd_event->header.eventId == gpr_event_id)
+            {
+                gpr_event_count++;
+            }
+        }
+    }
+    
+    // Check if no GPR events found.
+    if (gpr_event_count == 0)
+    {
+        should_process = false;
+    }
+    
+    nlohmann::json gpr_data_array;
+    size_t gpr_events_processed = 0;
+    
+    if (should_process)
+    {
+        gpr_data_array = nlohmann::json::array();
+        
+        for (size_t i = 0; i < total_events; ++i)
+        {
+            const RgdEventOccurrence& current_event = kmd_crash_data.events[i];
+            
+            if (current_event.rgd_event != nullptr && 
+                current_event.rgd_event->header.eventId == gpr_event_id)
+            {
+                gpr_events_processed++;
+                const GprRegistersData& gpr_event = static_cast<const GprRegistersData&>(*current_event.rgd_event);
+                
+                const uint32_t shader_id = gpr_event.shaderId;
+                const uint32_t wave_id = gpr_event.waveId;
+                const uint32_t simd_id = gpr_event.simdId;
+                const uint32_t wgp_id = gpr_event.wgpId;
+                const uint32_t sa_id = gpr_event.saId;
+                const uint32_t se_id = gpr_event.seId;
+                
+                nlohmann::json gpr_entry;
+                gpr_entry[kJsonElemGprTimestamp] = current_event.event_time;
+                gpr_entry[kJsonElemGprType] = gpr_event.isVgpr ? kJsonElemGprTypeVgpr : kJsonElemGprTypeSgpr;
+                gpr_entry[kJsonElemGprShaderId] = shader_id;
+                gpr_entry[kJsonElemGprSeId] = se_id;
+                gpr_entry[kJsonElemGprSaId] = sa_id;
+                gpr_entry[kJsonElemGprWgpId] = wgp_id;
+                gpr_entry[kJsonElemGprSimdId] = simd_id;
+                gpr_entry[kJsonElemGprWaveId] = wave_id;
+                gpr_entry[kJsonElemGprWorkItem] = gpr_event.workItem;
+                gpr_entry[kJsonElemGprRegistersToRead] = gpr_event.regToRead;
+
+                // For VGPR and SGPR data, we first collect all register values in a vector rather than adding them individually to the JSON object.
+                // This significantly reduces overhead by performing a single bulk operation instead of multiple JSON insertions.
+                // This approach is especially important when handling thousands of registers across multiple waves.
+                const uint32_t reg_count = gpr_event.regToRead;
+                if (reg_count > 0)
+                {
+                    // Create std::vector first, then assign to JSON in one operation.
+                    std::vector<uint32_t> register_values_vec(gpr_event.reg, gpr_event.reg + reg_count);
+                    gpr_entry[kJsonElemGprRegisterValues] = std::move(register_values_vec);
+                }
+                else
+                {
+                    gpr_entry[kJsonElemGprRegisterValues] = nlohmann::json::array();
+                }
+                
+                // Add entry to main array.
+                gpr_data_array.emplace_back(std::move(gpr_entry));
+            }
+        }
+    }
+
+    // Assign the complete array to the main JSON object in one operation.
+    if (!gpr_data_array.empty())
+    {
+        json_[kJsonElemGprRawData] = std::move(gpr_data_array);
+        has_gpr_data_ = true;
+    }
+}
+
 bool RgdSerializerJson::SaveToFile(const Config& user_config) const
 {
     std::string contents;
 
-    if (user_config.is_compact_json)
+    if (user_config.is_compact_json || user_config.is_raw_gpr_data)
     {
+        // Use compact format when requested or raw VGPR and SGPR data is present.
         contents = json_.dump();
     }
     else
@@ -566,4 +687,20 @@ bool RgdSerializerJson::SaveToFile(const Config& user_config) const
         contents = json_.dump(kIndent);
     }
     return RgdUtils::WriteTextFile(user_config.output_file_json, contents);
+}
+
+void RgdSerializerJson::Clear()
+{
+    // Clear large GPR data first to minimize destructor time.
+    if (has_gpr_data_ && json_.contains(kJsonElemGprRawData))
+    {
+        // Move GPR data out and let it destruct separately to avoid expensive copying.
+        // temp_gpr will be automatically destructed here with move semantics.
+        nlohmann::json temp_gpr = std::move(json_[kJsonElemGprRawData]);
+        json_.erase(kJsonElemGprRawData);
+    }
+    
+    // Clear the remaining JSON object.
+    json_.clear();
+    has_gpr_data_ = false;
 }

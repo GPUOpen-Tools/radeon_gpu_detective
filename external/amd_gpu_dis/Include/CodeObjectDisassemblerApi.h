@@ -303,6 +303,18 @@ typedef AmdGpuDisStatus(AMD_GPU_DIS_API_CALL *AmdGpuDisGetBlockByAddress_fn)(
 typedef AmdGpuDisStatus(AMD_GPU_DIS_API_CALL *AmdGpuDisGetBlockAddress_fn)(
     const AmdGpuDisBlock *Block, uint64_t *BlockAddr);
 
+/*
+/// @brief Set a disassembling option.
+///
+/// @description
+/// Currently supported options are:
+/// - `mattr`
+///   Target architecture features. `Value` is a string
+///   (`const char*`) of comma-separated list of target features.
+*/
+typedef AmdGpuDisStatus(AMD_GPU_DIS_API_CALL *AmdGpuDisSetOption_fn)(
+    AmdGpuDisContext Context, const char *Name, const void *Value);
+
 typedef struct {
   uint32_t MajorVersion;
   uint32_t MinorVersion;
@@ -348,6 +360,7 @@ typedef struct {
       AmdGpuDisGetInstructionAddressByBlockAddressAndIndex;
   AmdGpuDisGetBlockByAddress_fn GetBlockByAddress;
   AmdGpuDisGetBlockAddress_fn GetBlockAddress;
+  AmdGpuDisSetOption_fn SetOption;
 } AmdGpuDisApiTable;
 
 #ifdef __cplusplus

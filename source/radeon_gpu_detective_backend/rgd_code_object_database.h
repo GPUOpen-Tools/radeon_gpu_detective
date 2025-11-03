@@ -70,11 +70,34 @@ struct RgdShaderInfo
     // PDB file path for the shader.
     std::string pdb_file_path;
 
+    // SRD analysis data for instructions that have SRD analysis.
+    // Vector of pairs where first element is the instruction text and second is the SRD analysis text.
+    std::vector<std::pair<std::string, std::string>> srd_analysis_data;
+
     // Is this a crashing shader.
     bool is_in_flight_shader = false;
 
     // Was debug info found for this shader.
     bool has_debug_info = false;
+
+    /// @brief Check if a given PC offset falls within this shader's instruction range.
+    /// @param pc_offset The program counter offset to check.
+    /// @return true if the PC offset is within the shader's instruction range, false otherwise.
+    /// @note PC always points to the next instruction to execute. So it is not expected to be equal to the offset for the first instruction in the shader.
+    bool ContainsPcOffset(uint64_t pc_offset) const
+    {
+        bool ret = false;
+        if (!instructions.empty())
+        {
+            uint64_t start_offset = instructions[0].first;
+            uint64_t end_offset   = instructions[instructions.size() - 1].first;
+
+            // Check if the PC offset falls within the range of the shader instructions.
+            // PC always points to the next instruction to execute. So it not expected to be equal to the offset for the first instruction in the shader.
+            ret = (pc_offset > start_offset && pc_offset <= end_offset);
+        }
+        return ret;
+    }
 };
 
 class RgdCodeObjectEntry
@@ -147,12 +170,18 @@ public:
     // Map of the program counters offset and the count of waves that have the same program counter offset.
     std::map<uint64_t, size_t> pc_offset_to_hung_wave_count_map_;
 
+    // Map of program counter offsets to shader IDs/wave coordinates.
+    std::map<uint64_t, std::vector<uint32_t>> pc_offset_to_wave_coords_map_;
+
     // Map of the hardware stage and the corresponding shader information.
     std::map<amdt::HwStageType, RgdShaderInfo> hw_stage_to_shader_info_map_;
 
     // Disassembly string for the code object.
     std::string disassembly_;
 };
+
+// Create ISA context for AmdGpuDis disassembler.
+bool RgdCodeObjDbCreateIsaContextAmdGpuDis(RgdCodeObjectEntry* code_obj_entry, ecitrace::GpuSeries gpu_series);
 
 /// @brief Stores information about the crashing code objects.
 class RgdCodeObjectDatabase
@@ -166,10 +195,10 @@ public:
 
     /// @brief Add a code object to the database.
     /// This method can only be called on a code object DB before Populate is called.
-    bool AddCodeObject(uint64_t pc_instruction_offset, uint64_t api_pso_hash, size_t pc_wave_count, Rgd128bitHash internal_pipeline_hash, std::vector<uint8_t>&& code_object_payload);
+    bool AddCodeObject(uint64_t pc_instruction_offset, uint64_t api_pso_hash, size_t pc_wave_count, Rgd128bitHash internal_pipeline_hash, std::vector<uint8_t>&& code_object_payload, std::vector<uint32_t>&& wave_coords);
 
     /// @brief Fill in the code object based on the buffer that is assigned to it previously.
-    bool Populate();
+    bool Populate(ecitrace::GpuSeries gpu_series);
 
     /// @brief Extract debug information for shaders if available
     /// This method will utilize the provided user configuration along with the directories specified.
@@ -183,7 +212,5 @@ public:
     std::map<Rgd128bitHash, RgdCodeObjectEntry*> internal_pipeline_hash_to_entry_map_ = {};
     bool                                         is_code_obj_db_built_                = false;
 };
-
-bool RgdCodeObjDbCreateIsaContextAmdGpuDis(RgdCodeObjectEntry* code_obj_entry);
 
 #endif  // RGD_CODE_OBJECT_DATABASE_H_

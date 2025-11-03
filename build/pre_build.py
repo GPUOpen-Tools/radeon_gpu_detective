@@ -184,7 +184,7 @@ def generate_config(config, args):
     else:
         cmake_generator="Unix Makefiles"
     if args.no_qt:
-        cmake_args = ["cmake", cmakelist_path, "-DHEADLESS=TRUE"]
+        cmake_args = ["cmake", cmakelist_path, "-DHEADLESS=TRUE", "-G", cmake_generator]
     else:
         cmake_args = ["cmake", cmakelist_path, "-DCMAKE_PREFIX_PATH=" + qt_path, "-G", cmake_generator]
 

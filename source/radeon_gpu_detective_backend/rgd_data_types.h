@@ -21,10 +21,16 @@
 #include "rdf/rdf/inc/amdrdf.h"
 
 // Dev driver.
+#pragma warning(push)
+#pragma warning(disable : 4201)  // nonstandard extension used: nameless struct/union.
 #include "dev_driver/include/rgdevents.h"
+#pragma warning(pop)
 
 // System info.
+#pragma warning(push)
+#pragma warning(disable : 4201)  // nonstandard extension used: nameless struct/union.
 #include "system_info_utils/source/system_info_reader.h"
+#pragma warning(pop)
 
 // Local.
 #include "rgd_asic_info.h"
@@ -106,8 +112,12 @@ static const char* kJsonElemHcaFlags          = "hcaFlags";
 static const char* kJsonElemCaptureWaveData   = "captureWaveData";
 static const char* kJsonElemEnableSingleAluOp = "enableSingleAluOp";
 static const char* kJsonElemEnableSingleMemOp = "enableSingleMemOp";
+static const char* kJsonElemCaptureSgprVgprData = "captureSgprVgprData";
 static const char* kJsonElemPdbSearchPaths    = "pdbSearchPaths";
 static const char* kErrorMsgInvalidRgdExtendedInfoJson = "invalid RgdExtendedInfo JSON";
+
+// RGD command line options constants.
+static const char* kStrRawGprData = "raw-gpr-data";
 
 // Enhanced Crash Info JSON element name constants.
 static const char* kJsonElemShaders                     = "shaders";
@@ -209,9 +219,11 @@ struct Config
 
     // Include more detailed information in text and JSON output.
     bool is_extended_output = false;
-
     // Save code object binaries from the crash dump file.
     bool is_save_code_object_binaries = false;
+
+    // Include raw GPR data in the text output.
+    bool is_raw_gpr_data = false;
 };
 
 // Stores time information about the crash analysis session.
@@ -284,6 +296,7 @@ struct RgdExtendedInfo
     bool                     is_capture_wave_data{false};
     bool                     is_enable_single_alu_op{false};
     bool                     is_enable_single_memory_op{false};
+    bool                     is_capture_sgpr_vgpr_data{false};
 };
 
 // Holds the parsed contents of a crash dump RDF file.

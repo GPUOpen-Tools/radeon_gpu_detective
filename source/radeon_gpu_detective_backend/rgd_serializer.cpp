@@ -343,6 +343,7 @@ void RgdSerializer::InputInfoToString(const Config&                        user_
         txt << std::endl;
     }
     txt << "Hardware Crash Analysis: " << (contents.rgd_extended_info.is_hca_enabled ? kStrEnabled : kStrDisabled) << std::endl;
+    txt << "SGPR/VGPR collection: " << (contents.rgd_extended_info.is_capture_sgpr_vgpr_data ? kStrEnabled : kStrDisabled) << std::endl;
     txt << std::endl;
 
     input_info_str = txt.str();
@@ -578,10 +579,39 @@ std::string RgdSerializer::EventWaveRegisterDataToString(const WaveRegistersData
         ret << offset_tabs << "Wave Register info " << reg_info_idx << ":" << std::endl;
         ret << offset_tabs << offset_tabs << "Offset: 0x" << std::hex << wave_register_data_event.registerInfos[reg_info_idx].offset << std::dec << std::endl;
         ret << offset_tabs << offset_tabs << "Data  : 0x" << std::hex << wave_register_data_event.registerInfos[reg_info_idx].data << std::dec << std::endl;
+    }    return ret.str();
+
+}
+
+std::string RgdSerializer::EventGprRegisterDataToString(const GprRegistersData& gpr_register_data_event)
+{
+    std::stringstream ret;
+
+    uint32_t shader_id = gpr_register_data_event.shaderId;
+    uint32_t wave_id = gpr_register_data_event.waveId;
+    uint32_t simd_id = gpr_register_data_event.simdId;
+    uint32_t wgp_id = gpr_register_data_event.wgpId;
+    uint32_t sa_id = gpr_register_data_event.saId;
+    uint32_t se_id = gpr_register_data_event.seId;
+
+    // Print header line (VGPR or SGPR).
+    ret << (gpr_register_data_event.isVgpr ? "VGPR" : "SGPR") << " --- SE: " << se_id 
+        << " SA: " << sa_id << " WGP: " << wgp_id << " SIMD: " << simd_id 
+        << " WAVE: " << wave_id << " WORK ITEM: " << gpr_register_data_event.workItem << std::endl;
+    // Print GPR values, 8 per line.
+    for (uint32_t reg_idx = 0; reg_idx < gpr_register_data_event.regToRead; reg_idx += 8)
+    {
+        ret << std::setfill('0') << std::setw(3) << reg_idx << ": ";
+        for (uint32_t j = 0; j < 8 && (reg_idx + j) < gpr_register_data_event.regToRead; ++j)
+        {
+            ret << "0x" << std::setfill('0') << std::setw(8) << std::hex << gpr_register_data_event.reg[reg_idx + j] << std::dec;
+            if (j < 7 && (reg_idx + j + 1) < gpr_register_data_event.regToRead)
+                ret << "  ";
+        }
+        ret << std::endl;
     }
 
     return ret.str();
-
 }
 
 std::string RgdSerializer::EventSeInfoToString(const SeInfo& se_info_event, const std::string& offset_tabs)
@@ -694,6 +724,11 @@ static std::string SerializeRgdEventOccurrenceKmd(const RgdEventOccurrence& curr
         const WaveRegistersData& wave_register_data_event = static_cast<const WaveRegistersData&>(rgd_event);
         txt << RgdSerializer::EventWaveRegisterDataToString(wave_register_data_event, "\t") << std::endl;
     }
+    break;
+    case uint8_t(KmdEventId::SgprVgprRegisters):
+
+    // For SGPRs or VGPRs, separate option '--raw-gpr-data' is used to print the data.
+    // Skip printing the data here when '--raw-data' is used.
     break;
     default:
         // Notify in case there is an unknown event type.

@@ -71,6 +71,7 @@ This section is titled ``CRASH ANALYSIS FILE`` and contains information about th
 * **API**: API (DirectX 12 or Vulkan) that was used by the crashing application.
 * **PDB files used [DX12 only]**: the list of PDB files that were used to generate the crash analysis summary report.
 * **Hardware Crash Analysis**: whether the Hardware Crash Analysis feature was enabled when the crash dump was captured.
+* **SGPR/VGPR collection**: whether SGPRs and VGPRs register collection was enabled when the crash dump was captured.
 
 System information
 """"""""""""""""""
@@ -397,15 +398,16 @@ As you can see, the annotation of the in-flight execution markers contains a ref
 This section is titled ``SHADER INFO`` and contains a low-level information about the shaders which are identified as in-flight at the time of the crash.
 
 The ``SHADER INFO`` section will list the following information for each shader that was in flight at the time of the crash::
-  * **Shader Info ID**                 : Arbitrary identifier for the shader info.
-  * **API stage**                      : The API stage of the given shader.
-  * **API PSO hash**                   : Hash value that uniquely identifies the API Pipeline State Object (PSO) that was used to create the shader.
-  * **API shader hash**                : Hash value that uniquely identifies the shader.
-  * **File name**                      : [DX12 only] The name of the source file in which the shader was defined, if available (e.g. "DownSamplePS.hlsl").
-  * **Entry point name**               : [DX12 only] The name of the shader's entry point, if available (e.g. "mainPS").
-  * **Shader IO and resource bindings**: [DX12 only] Information about the shader's input/output and resource bindings, if available.
-  * **HLSL source code**               : [DX12 only] The HLSL source code of the shader, if available.
-  * **Disassembly**                    : Disassembly of the shader showing the consolidated pointers to instruction/s which were being executed by one or more wavefronts at the time of the crash.
+  * **Shader Info ID**                           : Arbitrary identifier for the shader info.
+  * **API stage**                                : The API stage of the given shader.
+  * **API PSO hash**                             : Hash value that uniquely identifies the API Pipeline State Object (PSO) that was used to create the shader.
+  * **API shader hash**                          : Hash value that uniquely identifies the shader.
+  * **File name**                                : [DX12 only] The name of the source file in which the shader was defined, if available (e.g. "DownSamplePS.hlsl").
+  * **Entry point name**                         : [DX12 only] The name of the shader's entry point, if available (e.g. "mainPS").
+  * **Shader IO and resource bindings**          : [DX12 only] Information about the shader's input/output and resource bindings, if available.
+  * **HLSL source code**                         : [DX12 only] The HLSL source code of the shader, if available.
+  * **Disassembly**                              : Disassembly of the shader showing the consolidated pointers to instruction/s which were being executed by one or more wavefronts at the time of the crash.
+  * **Shader Resource Descriptor (SRD) Analysis**: When the offending (or in‑flight) instruction uses SGPR-resident resource descriptors (e.g. image / buffer / sampler / BVH SRDs) and SGPR register collection was enabled at capture time, RGD decodes the relevant 32 or 64 bit words and appends an ``SRD ANALYSIS`` subsection to the SHADER INFO entry. See the section :ref:`Shader Resource Descriptor (SRD) Analysis <srd_analysis>` for more details.
   
 
 Here is an example of a shader info::
@@ -680,6 +682,92 @@ Here is an example of the SHADER INFO when debug information is available::
 .. note::
    Please note that while the HLSL source code is included in the output file, there is currently no correlation between the offending RDNA instruction and the corresponding high-level source lines. We are actively working with our compiler teams to enable this capability and look forward to sharing updates in a future release.
 
+.. _srd_analysis:
+
+**Shader Resource Descriptor (SRD) Analysis**
+
+In RGD 1.6, when an offending or in-flight RDNA instruction utilizes an SRD for a resource such as an image, buffer, sampler, or BVH, the tool will decode the SRD, disassemble it and present the information in the output file in a new ``Shader Resource Descriptor (SRD) Analysis`` subsection, under the SHADER INFO section.
+ 
+This feature can be helpful in diagnosing issues like stale, corrupted, or incorrectly indexed descriptors, which often manifest as page faults or invalid memory access.
+
+For more information about individual SRD fields, please refer :ref:`SRD Field Descriptions <srd_field_descriptions>` section.
+
+Here is an example output when SGPRs and VGPRs collection was enabled at capture time and the offending instruction uses image and sampler SRDs::
+
+    Shader Resource Descriptor (SRD) Analysis
+    =========================================
+    Instruction: image_sample v[8:11], [v4, v6], s[0:7], s[12:15] dmask:0xf dim:SQ_RSRC_IMG_2D// 0000000004D0: E7C6C001 06000008 00000604
+
+        Image SGPRs (s[0:7]):
+          Image (RDNA4):
+            BaseAddress: 0x236dc0000
+            Max_Mip: 0x0
+            Format: IMG_FMT_16_16_16_16_FLOAT
+            Base_Level: 0x0
+            Width: 0x780
+            Height: 0x438
+            DstSel_X: DstSel.X
+            DstSel_Y: DstSel.Y
+            DstSel_Z: DstSel.Z
+            DstSel_W: DstSel.W
+            No_Edge_Clamp: false
+            Last_Level: 0x0
+            SW_MODE: SW_64KB_2D
+            BC_SWIZZLE: TEX_BC_Swizzle_XYZW
+            Resource_Type: SQ_RSRC_IMG_2D
+            Pitch: 0x1
+            Base_Array: 0x0
+            UAV_3D: false
+            Min_Lod_Warn: 0x0
+            Perf_Mod: 0x4
+            Corner_Sample: false
+            Linked_Resource: false
+            Min_Lod: 0x0
+            Iterate_256: false
+            Sample_Pattern_Offset: 0
+            Max_Uncompressed_Block_Size: 1
+            Max_Compressed_Block_Size: 2
+            Write_Compress_En: true
+            Compression_En: true
+            Compression_Access_Mode: 0
+            Speculative_Read: 0
+
+        Sampler SGPRs (s[12:15]):
+          Sampler (RDNA4):
+            Clamp X: SQ_TEX_CLAMP_LAST_TEXEL (2)
+            Clamp Y: SQ_TEX_CLAMP_LAST_TEXEL (2)
+            Clamp Z: SQ_TEX_CLAMP_LAST_TEXEL (2)
+            Max Aniso Ratio: SQ_TEX_ANISO_RATIO_1
+            Depth Compare Function: TEX_DepthCompareFunction_Always
+            Force Unnormalized: false
+            Aniso Threshold: 0
+            MC Coord Trunc: false
+            Force Degamma: false
+            Aniso Bias: 0
+            Trunc Coord: true
+            Disable Cube Wrap: false
+            Filter Mode: SQ_IMG_FILTER_MODE_BLEND (0)
+            Skip Degamma: false
+            Min LOD: 0
+            Max LOD: 31.9961
+            Perf Z: 0
+            LOD Bias: 0
+            LOD Bias Sec: 0
+            XY Mag Filter: TEX_XYFilter_Linear (1)
+            XY Min Filter: TEX_XYFilter_Linear (1)
+            Z Filter: TEX_ZFilter_None (0)
+            Mip Filter: TEX_MipFilter_Point (1)
+            Aniso Override: true
+            Perf Mip: 0
+            Border Color Ptr: 0
+            Border Color Type: SQ_TEX_BORDER_COLOR_OPAQUE_WHITE (2)
+
+.. note::
+  When wave SGPRs and VGPRs collection is enabled, RGD collects the SGPRs and VGPRs for all the active waves at the time of the crash. This may result in a longer capture time and a significantly larger crash dump file generated.
+  By default, raw VGPR and SGPR data is excluded from RGD crash analysis summary output file to prevent bloating the output. To include this data, rerun the rgd CLI tool with the ``--raw-gpr-data`` option.
+
+  The SRD analysis feature requires SGPR/VGPR register collection to be enabled at capture time. Since SGPR/VGPR collection increases the crash dump (.rgd) file size, this option is not enabled by default in the Radeon Developer Panel (RDP). You can easily enable this option through the RDP UI before starting any Crash Analysis session if necessary.
+
 Interpreting the results
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -721,7 +809,7 @@ Let's elaborate:
    but a different other type of problem, e.g. a shader hang due to timeout (too long execution) or an infinite loop.
 
 
-Scope of v1.5
+Scope of v1.6
 -------------
 RGD is designed to capture **GPU crashes** on Windows. If a GPU fault (such as memory page fault or infinite loop in a shader) causes the GPU driver to not respond to the OS for some pre-determined 
 time period (the default on Windows is 2 seconds), the OS will detect that and attempt to restart or remove the device. This mechanism is also known as "TDR" (Timeout Detection and Recovery) and is what we 
@@ -741,6 +829,8 @@ Therefore, such crashes are not captured by RGD. They usually result in ``DXGI_E
 are usually detected by the D3D12 Debug Layer.
 
 For DX12 applications ``Hardware Crash Analysis`` feature now supports ``debug information``. See the section :ref:`hardware_crash_analysis` for more details.
+
+Shader Resource Descriptor (SRD) Analysis is supported when SGPR register collection is enabled at capture time. See the section :ref:`Shader Resource Descriptor (SRD) Analysis <srd_analysis>` for more details. 
 
 
 .. note::
@@ -775,6 +865,7 @@ Usage tips for RGD
 * **Try Crash Analysis with Driver Experiments**: If you suspect that certain optimizations or features enabled by the driver might be causing the crash, 
   you can try to disable them using Driver Experiments. This can help you narrow down the search for the cause of the crash.
 
+
 Known issues and workarounds
 ----------------------------
 
@@ -784,4 +875,554 @@ Known issues and workarounds
 * A system reboot is recommended after the **driver installation**. An invalid crash dump file may get generated when RGD workflow is executed after a fresh driver installation without a system reboot.
 
 
+
+Appendix
+========
+
+.. _appendix:
+
+This section contains supplementary information and reference materials.
+
+.. _srd_field_descriptions:
+
+SRD Field Descriptions
+----------------------
+
+Legend:
+  - ✓ Supported field
+  - ✗ Unsupported field
+
+Image SRD Fields
+^^^^^^^^^^^^^^^^
+
+.. list-table::
+   :widths: 30 10 10 50
+   :header-rows: 1
+
+   * - Field Name
+     - RDNA3
+     - RDNA4
+     - Description
+   * - Base address
+     - ✓
+     - ✓
+     - 256-byte aligned (represents bits 47:8).
+   * - Llc_NoAlloc
+     - ✓
+     - ✗
+     - | 0: NOALLOC = (PTE.NOALLOC | instruction.dlc)
+       | 1: NOALLOC = Read ? (PTE.NOALLOC | instruction.dlc) : 1
+       | 2: NOALLOC = Read ? 1 : (PTE.NOALLOC | instruction.dlc)
+       | 3: NOALLOC = 1
+   * - Big page
+     - ✓
+     - ✗
+     - | 0 = No page size override
+       | 1 = coalesce page translation requests to 64kB granularity. Use only when entire resource uses pages 64kB or greater.
+   * - Max mip
+     - ✓
+     - ✓
+     - | MSAA resources: holds Log2(number of samples)
+       | others holds: MipLevels-1. 
+       | This describes the resource, not the resource view.
+   * - Format
+     - ✓
+     - ✓
+     - Memory Data format
+   * - Width
+     - ✓
+     - ✓
+     - width-1 of mip 0 in texels
+   * - Height
+     - ✓
+     - ✓
+     - height-1 of mip 0 in texels
+   * - Dst_sel_x / Dst_sel_y / Dst_sel_z / Dst_sel_w
+     - ✓
+     - ✓
+     - | 0 = 0, 1 = 1, 4 = R, 5 = G, 6 = B, 7 = A.
+   * - No_Edge_Clamp
+     - ✗
+     - ✓
+     - | Disable edge clamping for load/store so that blocks on the edge of a compressed texture aren't clamped to zero (when software copies the resource as raw 128bit)
+   * - Base level
+     - ✓
+     - ✓
+     - Largest mip level in the resource view.  For MSAA, this should be set to 0
+   * - Last level
+     - ✓
+     - ✓
+     - Smallest mip level in the resource view.  For MSAA, holds log2(number of samples)
+   * - SW_MODE
+     - ✓
+     - ✓
+     - Sets the swizzle(tiling) mode
+   * - BC swizzle
+     - ✓
+     - ✓
+     - | Specifies channel ordering for border color data independent of the T# dst_sel_*s.
+       | Internal xyzw channels get the following border color channels as stored in memory.
+       | 0=xyzw, 1=xwyz, 2=wzyx, 3=wxyz, 4=zyxw, 5=yxwz
+   * - Resource Type
+     - ✓
+     - ✓
+     - | 0 = buf, 8 = 1d, 9 = 2d, 10 = 3d, 11 = cube, 12 = 1d-array, 13 = 2d-array, 14 = 2d-msaa, 15 = 2d-msaa-array.
+       | 1-7 are reserved.
+   * - Pitch_msb
+     - ✓
+     - ✓
+     - | 1D or 2D, MSAA resources: MSBs of pitch-1. i.e. (pitch-1)[15:14] of mip 0, if pitch > width.
+       | Other resources: Must be zero
+   * - Base array
+     - ✓
+     - ✓
+     - First slice in array of the resource view.
+   * - UAV3D
+     - ✗
+     - ✓
+     - | 3D resources: bit 0 indicates SRV or UAV:
+       | 0: SRV (base_array ignored, depth w.r.t. base map)
+       | 1: UAV (base_array and depth are first and last layer in view, and w.r.t. mip level specified)
+       | Other resources: Not used
+   * - Array pitch
+     - ✓
+     - ✗
+     - | For Arrays, array pitch for quilts, encoded as trunc(log2(array pitch))+1. values 8..15 reserved
+       | For 3D, bit 0 indicates SRV or UAV:
+       |    0: SRV (base_array ignored, depth w.r.t. base map)
+       |    1: UAV (base_array and depth are first and last layer in view, and w.r.t. mip level specified)
+   * - Min_Lod_Warn
+     - ✓
+     - ✓
+     - | feedback trigger for LOD, u5.8 format
+   * - Perf_mod
+     - ✓
+     - ✓
+     - scales sampler's perf_z, perf_mip, aniso_bias, lod_bias_sec
+   * - Corner samples mod
+     - ✓
+     - ✓
+     - | Describes how texels were generated in the resource. 
+       | 0=center sampled
+       | 1=corner sampled
+   * - Linked_resource
+     - ✓
+     - ✓
+     - | Indicates if T# contains information describing a linked resource further describes by T#.linked_resource_type
+       | 0 : ""Normal"" resource, no linked resource information
+       | 1 : Contains linked resource information
+       | When this bit is set and linked resource information exists, the following fields are re-defined: base_address, min_lod_warn, bc_swizzle, max_mip, meta_address.  See field descriptions for more details.
+   * - PRT_Default
+     - ✓
+     - ✗
+     - PRT unmapped returns 0.0 or 1.0 if this bit is 0 or 1 respectively
+   * - Min LOD
+     - ✓
+     - ✓
+     - smallest LOD allowed for PRTs, u4.8 format
+   * - Iterate 256
+     - ✓
+     - ✓
+     - | MSAA depth surfaces: indicates that compressed tiles in this surface have been flushed out to every 256B of the tile.
+       |
+       | For other types (with PRT_LOD_STAT feature enabled):
+       | This field specifies the bank_id used by PRT counters for LOD stats accumulation
+   * - Sample_pattern_offset
+     - ✓
+     - ✓
+     - | For MSAA surfaces, this field contains:
+       | samplePatternOffset  //must use bit[206:203]
+       | For bindless textures, the driver uses these bits to pass a sample index to shader compiler.  The index gets used for returning the sample position for a SamplePos op.
+       |
+       | For other types  (with PRT_LOD_STAT feature enabled):
+       | This field specifies the bank_id used by PRT counters for LOD stats accumulation
+   * - Max_uncompressed_block_size
+     - ✓
+     - ✓
+     - | Maximum uncompressed block size used for compressed shader writes:
+       | 0=64B,  1=128B,  2=256B (recommended),  3=reserved
+   * - Max_compressed_block_size
+     - ✓
+     - ✓
+     - | For compressed writes: maximum compressed block size and independent block size
+       | For compressed reads: independent block size
+       | 0=64B not supported with compressed shader write, supported with read
+       | 1=128B supported with compressed shader write and read
+       | 2=reserved,  3=reserved
+   * - Meta pipe aligned
+     - ✓
+     - ✗
+     - Maintain pipe alignment in metadata addressing (DCC and TILING)
+   * - Write_compress_en
+     - ✓
+     - ✓
+     - Enable compressed writes from shader
+   * - Compression enable
+     - ✓
+     - ✓
+     - Enable Delta Color Compression (DCC)
+   * - Alpha is on MSB
+     - ✓
+     - ✗
+     - | Set to 1 if the surface’s component swap is not reversed (DCC)
+   * - Color transform
+     - ✓
+     - ✗
+     - | auto=0, none=1 (DCC)
+   * - Metadata address
+     - ✓
+     - ✗
+     - | Upper bits of meta-data address (DCC) [47:8]
+   * - Compression_Access_Mode
+     - ✗
+     - ✓
+     - | See table below for interaction with write_compress_enable and compression_en
+       | 0x0 = normal
+       | 0x1 (= force_existing_data_to_decompress)
+       | 0x2 (= compressed_data_access)
+       | 0x3 (= metadata_access)
+   * - Speculative_read
+     - ✗
+     - ✓
+     - | Fetch compressed data speculatively on a metadata miss in the MALL.
+       | Driven by the SRD for the shader, otherwise by a context or config control register.
+       | 0 – Auto
+       | 1 – Force On
+       | 2 – Force Off
+       | 3 – Reserved
+
+Sampler SRD Fields
+^^^^^^^^^^^^^^^^^^
+
+.. list-table::
+   :widths: 30 10 10 50
+   :header-rows: 1
+
+   * - Field Name
+     - RDNA3
+     - RDNA4
+     - Description
+   * - Clamp x / Clamp y / Clamp z
+     - ✓
+     - ✓
+     - | Clamp/wrap mode
+       | 0: Wrap
+       | 1: Mirror
+       | 2: ClampLastTexel
+       | 3: MirrorOnceLastTexel
+       | 4: ClampHalfBorder
+       | 5: MirrorOnceHalfBorder
+       | 6: ClampBorder
+       | 7: MirrorOnceBorder
+   * - Max aniso ratio
+     - ✓
+     - ✓
+     - | 0: 1:1
+       | 1: 2:1
+       | 2: 4:1
+       | 3: 8:1
+       | 4: 16:1
+   * - Depth compare func
+     - ✓
+     - ✓
+     - | 0: Never
+       | 1: Less
+       | 2: Equal
+       | 3: Less than or equal
+       | 4: Greater
+       | 5: Not equal
+       | 6: Greater than or equal
+       | 7: Always
+   * - Force unnormalized
+     - ✓
+     - ✓
+     - | Force address cords to be unorm:
+       | 0 = address coordinates are normalized, in [0,1)
+       | 1 = address coordinates are unnormalized in the range [0,dim)
+   * - Aniso threshold
+     - ✓
+     - ✓
+     - threshold under which floor(aniso ratio) determines number of samples and step size
+   * - Mc coord trunc
+     - ✓
+     - ✓
+     - Enables bilinear blend fraction truncation to 1 bit for motion compensation
+   * - Force degamma
+     - ✓
+     - ✓
+     - Force format to srgb if data_format allows
+   * - Aniso bias
+     - ✓
+     - ✓
+     - 6 bits, in u1.5 format.
+   * - Trunc coord
+     - ✓
+     - ✓
+     - Selects texel coordinate rounding or truncation
+   * - Disable cube wrap
+     - ✓
+     - ✓
+     - Disables seamless cubemaps, allows cubemaps to clamp according to clamp_x and clamp_y fields
+   * - Filter_mode
+     - ✓
+     - ✓
+     - | 0: Blend (normal lerp/blend)
+       | 1: Min
+       | 2: Max
+   * - Skip degamma
+     - ✓
+     - ✓
+     - Disabled degamma (sRGB->Linear) conversion.
+   * - Min lod
+     - ✓
+     - ✓
+     - minimum LOD ins resource view space (0.0 = T#.base_level) u5.8.
+   * - Max lod
+     - ✓
+     - ✓
+     - maximum LOD ins resource view space
+   * - Perf_mip
+     - ✓
+     - ✗
+     - Defines range of lod fractions that snap to nearest mip only when mip_filter=Linear
+   * - Perf_z
+     - ✓
+     - ✓
+     - Defines range of z fractions that snap to nearest z layer z_filter=Linear
+   * - Lod bias
+     - ✓
+     - ✓
+     - | LOD bias s6.8.
+   * - Lod bias sec
+     - ✓
+     - ✓
+     - bias (s2.4) added to computed LOD
+   * - XY mag filter
+     - ✓
+     - ✓
+     - | Magnification filter
+       | 0: Point
+       | 1: Bilinear
+       | 2: Aniso Point
+       | 3: Aniso Linear
+   * - XY min filter
+     - ✓
+     - ✓
+     - | Minification filter
+       | 0: Point
+       | 1: Bilinear
+       | 2: Aniso Point
+       | 3: Aniso Linear
+   * - Z filter
+     - ✓
+     - ✓
+     - | Volume filter
+       | 0: None, use xy_min_filter or xy_mag_filter depending on LOD calculation
+       | 1: Point
+       | 2: Linear
+   * - Mip filter
+     - ✓
+     - ✓
+     - | Controls how mip layers are filtered
+       | 0: None (Disable mipmapping, always fetch from T#.base_level)
+       | 1: Point
+       | 2: Linear
+   * - Aniso_override
+     - ✓
+     - ✓
+     - Disable aniso filtering if T#.base_level==T#.last_level
+   * - Blend_zero_PRT
+     - ✓
+     - ✓
+     - | MUST BE SET TO 1
+       | For PRT fetches, blend the prt_default value for non-resident texels
+   * - Border color_ptr
+     - ✓
+     - ✓
+     - | index to border color space
+   * - Border color type
+     - ✓
+     - ✓
+     - | Opaque-black, transparent-black, white, use border color ptr.
+       | 0: Transparent Black
+       | 1: Opaque Black
+       | 2: Opaque White
+       | 3: Register (User border color, pointed to by border_color_ptr)
+
+Buffer SRD Fields
+^^^^^^^^^^^^^^^^^
+
+.. list-table::
+   :widths: 30 10 10 50
+   :header-rows: 1
+
+   * - Field Name
+     - RDNA3
+     - RDNA4
+     - Description
+   * - Base address
+     - ✓
+     - ✓
+     - Byte address.
+   * - Stride
+     - ✓
+     - ✓
+     - Bytes: 0-16383 3 (modified by Stride Scale)
+   * - Swizzle enable
+     - ✓
+     - ✓
+     - | Swizzle AOS according to stride, index_stride and element_size; otherwise linear.
+       | 0: disabled
+       | 1: enabled w/ element_size == 4bytes
+       | 2: reserved
+       | 3: enabled w/ element_size == 16bytes
+   * - Num_records
+     - ✓
+     - ✓
+     - In units of stride if (stride >=1), else in bytes.
+   * - Dst_sel_x / Dst_sel_y / Dst_sel_z / Dst_sel_w
+     - ✓
+     - ✓
+     - | Destination channel select
+       | 0=0, 1=1, 4=R, 5=G, 6=B, 7=A
+       | 2,3: RESERVED
+   * - Format
+     - ✓
+     - ✓
+     - Memory data type. Used only by Untyped-buffer "FORMAT" instructions.
+   * - Stride scale
+     - ✗
+     - ✓
+     - | Multiply the stride field by: 0: x1; 1: x4; 2: x8; 3: x32.
+   * - Index stride
+     - ✓
+     - ✓
+     - | 0:8, 1:16, 2:32, or 3:64. Used for swizzled buffer addressing.
+   * - Add tid enable
+     - ✓
+     - ✓
+     - Add thread ID to the index for to calculate the address.
+   * - Write compression enable
+     - ✗
+     - ✓
+     - | 1 = enable write compression, 0 = disabled
+   * - Compression enable
+     - ✗
+     - ✓
+     - | 0 = Bypass compression - resource is not compressible.
+       | 1 = Don't bypass compression
+   * - Compression access mode
+     - ✗
+     - ✓
+     - | 0x0 = normal
+       | 0x1 (= force_existing_data_to_decompress)
+       | 0x2 (= compressed_data_access)
+       | 0x3 (= metadata_access)
+   * - Llc_NoAlloc
+     - ✓
+     - ✗
+     - | 0: NOALLOC = (PTE.NOALLOC | instruction.dlc)
+       | 1: NOALLOC = Read ? (PTE.NOALLOC | instruction.dlc) : 1
+       | 2: NOALLOC = Read ? 1 : (PTE.NOALLOC | instruction.dlc)
+       | 3: NOALLOC = 1
+   * - OOB_SELECT
+     - ✓
+     - ✓
+     - Out of bounds select.
+   * - Type
+     - ✓
+     - ✓
+     - | Value == 0 for buffer. Overlaps upper two bits of four-bit TYPE field in 128-bit V# resource.
+
+
+
+BVH SRD Fields
+^^^^^^^^^^^^^^
+
+.. list-table::
+   :widths: 30 10 10 50
+   :header-rows: 1
+
+   * - Field Name
+     - RDNA3
+     - RDNA4
+     - Description
+   * - Base address
+     - ✓
+     - ✓
+     - Base address of the BVH texture, 256 byte aligned.
+   * - Sort_triangles_first
+     - ✗
+     - ✓
+     - | 0: Pointers to triangle nodes are not treated specially during child sorting
+       | 1: Pointers to triangle nodes (type 0 and 1 for image_bvh8, type 0,1,2,3 for all other image_bvh ops) are sorted before valid box nodes.
+   * - Box_sorting_heuristic
+     - ✓
+     - ✓
+     - | Specifies which heuristic should be utilized for sorting children when box sorting is enabled.
+       | 0: Closest Traversal is ordered to enter the children that intersect the ray closer to the ray origin first.
+       | 1: LargestFirst Traversal is ordered to enter the children that have the largest interval where the box intersects the ray first.
+       | 2: ClosestMidpoint Traversal is ordered to enter the children that have a midpoint
+       | in the interval, where the box intersects that has the lowest intersection time before clamping.
+       | 3: Undefined Reserved
+   * - Box_grow_value
+     - ✓
+     - ✓
+     - UINT — used to extend the MAX plane of the box intersection
+   * - Box_sort_en
+     - ✓
+     - ✓
+     - boolean to enable sorting the box intersect results
+   * - Size
+     - ✓
+     - ✓
+     - In units of 64 bytes. Represents the number of nodes in BVH texture minus 1. Used for bounds checking.
+   * - Compressed_Format_En
+     - ✗
+     - ✓
+     - | 0: Compressed format support is disabled
+       | 1: Compressed format support is enabled.  This includes enabling support for compressed primitive packets, BVH8-128B box nodes, and changes to triangle intersection test return data.
+   * - box_node_64B
+     - ✗
+     - ✓
+     - | 0: node type 4 is FP16 box node
+       | 1: node type 4 is 64B high precision box node
+   * - Wide_sort_en
+     - ✗
+     - ✓
+     - | 0: sort across 4 box children
+       | 1: sort across 8 box children
+   * - Instance_en
+     - ✗
+     - ✓
+     - | 0: node 6 is user node (RT 2..0)
+       | 1: node 6 is instance node
+   * - Pointer_flags
+     - ✓
+     - ✓
+     - | 0: Do not use pointer flags or features supported by pointer flags
+       | 1: Utilize pointer flags to enable HW winding, back face cull, opaque/non-opaque culling and primitive type based culling
+   * - Triangle_return_mode
+     - ✓
+     - ✓
+     - | 0: return hit/miss with triangle test result dword[3:0] = {t_num, t_denom, triangle_id, hit_status}
+       | 1: return barycentrics with triangle test result dword[3:0] = {t_num, t_denom, I_nim, J_num}
+   * - LLC_NoAlloc
+     - ✓
+     - ✗
+     - | May be removed from next gen GPUs. Please use shader instruction fields instead.
+       | 0: NOALLOC = (PTE.NOALLOC | instruction.dlc)
+       | 1: NOALLOC = Read ? (PTE.NOALLOC | instruction.dlc) : 1
+       | 2: NOALLOC = Read ? 1 : (PTE.NOALLOC | instruction.dlc)
+       | 3: NOALLOC = 1
+   * - Big_Page
+     - ✓
+     - ✗
+     - | Describes resource page usage
+       | 0: No page size override
+       | 1: Indicates when a whole resource is only using pages that are >= 64KB in size. UTCL0 in RMI and TCP would have this as an input to override the initial page size allocation to 64KB 
+   * - type
+     - ✓
+     - ✓
+     - MSB must be set -- 0x8
 

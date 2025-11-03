@@ -47,6 +47,7 @@ public:
     static std::string EventShaderWaveToString(const ShaderWaves& shader_wave_event, const std::string& offset_tabs);
     static std::string EventMmrRegisterDataToString(const MmrRegistersData& mmr_register_data_event, const std::string& offset_tabs);
     static std::string EventWaveRegisterDataToString(const WaveRegistersData& wave_register_data_event, const std::string& offset_tabs);
+    static std::string EventGprRegisterDataToString(const GprRegistersData& gpr_register_data_event);
     static std::string EventSeInfoToString(const SeInfo& se_info_event, const std::string& offset_tabs);
 
     // Serialize RGD Umd events in the given container into a string.

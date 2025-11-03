@@ -1,6 +1,6 @@
-Radeon™ GPU Detective (RGD)
-===========================
-Radeon GPU Detective (RGD) is a tool for post-mortem analysis of GPU crashes.
+The AMD Radeon™ GPU Detective (RGD)
+===================================
+The AMD Radeon™ GPU Detective (RGD) is a tool for post-mortem analysis of GPU crashes.
 
 .. toctree::
    :maxdepth: 2
@@ -18,7 +18,7 @@ This guide will get you up and running with RGD, a tool for post-mortem GPU cras
 .. note::
    Review these requirements to make sure that this tool is relevant for your use case:
    
-   * RGD v1.5 supports **DirectX12** and **Vulkan**.
+   * RGD v1.6 supports **DirectX12** and **Vulkan**.
    * **Windows 10 or 11**.
    * **RDNA™2** (RX 6000 series), **RDNA™3** (RX 7000 series) or **RDNA™ 4** (RX 9000 series) card.
    * Must **TDR** (we don't catch it if there is no TDR).
@@ -26,7 +26,7 @@ This guide will get you up and running with RGD, a tool for post-mortem GPU cras
 
 Preparation
 ^^^^^^^^^^^
-* Download the latest Windows version of `Radeon Developer Tools Suite (RDTS) <https://gpuopen.com/rdts-windows/>`_ and extract the .zip archive.
+* Download the latest Windows version of AMD `Radeon™ Developer Tools Suite (RDTS) <https://gpuopen.com/rdts-windows/>`_ and extract the .zip archive.
 
 Capture GPU crash dump
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -42,6 +42,7 @@ Capture GPU crash dump
    * Please note, Hardware Crash Analysis feature is enabled by default.
    * Optionally, provide PDB search paths in the "DXC shader PDB Search Paths" field to enable high-level shader details in the crash analysis report.
    * For more information about the Hardware Crash Analysis and Debug Info features, please see the RGD :doc:`help_manual`.
+   * Optionally, enable wave SGPRs and VGPRs collection to get more information about the resource descriptors used by an in-flight instruction at the time of the crash. This will increase the size of the generated .rgd file.
 
 .. image:: images/select-text-output-format.png 
 

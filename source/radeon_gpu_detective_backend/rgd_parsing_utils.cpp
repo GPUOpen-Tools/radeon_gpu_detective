@@ -265,6 +265,14 @@ bool RgdParsingUtils::ParseCrashDataChunks(rdf::ChunkFile& chunk_file, const cha
                         bytes_read += sizeof(DDEventHeader) + curr_event->header.eventSize;
                     }
                     break;
+                    case KmdEventId::SgprVgprRegisters:
+                    {
+                        GprRegistersData* curr_event = reinterpret_cast<GprRegistersData*>(curr_crash_data.chunk_payload.data() + bytes_read);
+                        current_time += (curr_event->header.delta * (uint64_t)timeUnit);
+                        curr_crash_data.events.push_back(RgdEventOccurrence(curr_event, current_time));
+                        bytes_read += sizeof(DDEventHeader) + curr_event->header.eventSize;
+                    }
+                    break;
                     default:
                         // Notify in case there is an unknown event type.
                         if (!is_unknown_event_id_reported)
@@ -507,6 +515,12 @@ std::string RgdParsingUtils::KmdRgdEventIdToString(uint8_t event_id)
         break;
     case (uint8_t)KmdEventId::RgdEventSeInfo:
         ret << "SE INFO";
+        break;
+    case (uint8_t)KmdEventId::RgdEventWaveRegisters:
+        ret << "WAVE REGISTERS DATA";
+        break;
+    case (uint8_t)KmdEventId::SgprVgprRegisters:
+        ret << "WAVE STATE VGPRs / SGPRs";
         break;
     default:
         // Shouldn't get here.
@@ -769,6 +783,11 @@ bool RgdParsingUtils::ParseRgdExtendedInfoChunk(rdf::ChunkFile& chunk_file, cons
                         if (hca_flags.contains(kJsonElemEnableSingleMemOp))
                         {
                             extended_info.is_enable_single_memory_op = hca_flags[kJsonElemEnableSingleMemOp].get<bool>();
+                        }
+
+                        if (hca_flags.contains(kJsonElemCaptureSgprVgprData))
+                        {
+                            extended_info.is_capture_sgpr_vgpr_data = hca_flags[kJsonElemCaptureSgprVgprData].get<bool>();
                         }
                     }
                     

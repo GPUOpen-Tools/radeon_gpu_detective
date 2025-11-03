@@ -13,7 +13,7 @@ project (RGD)
 
 # Define version information
 set(RGD_MAJOR_VERSION 1)
-set(RGD_MINOR_VERSION 5)
+set(RGD_MINOR_VERSION 6)
 set(RGD_PATCH_NUMBER 0)
 if (NOT RGD_BUILD_NUMBER)
     set(RGD_BUILD_NUMBER 0)
@@ -33,11 +33,11 @@ add_definitions(-DCOMGR_DYNAMIC_LINKING)
 
 # Include directories for all projects.
 set(AMDGPU_DIS_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/external/amd_gpu_dis/Include/)
-set(AMD_COMGR_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/external/comgr_package/comgr/include/)
+set(AMD_COMGR_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/external/comgr/include/)
 include_directories("${PROJECT_SOURCE_DIR}/external/")
 include_directories("${PROJECT_SOURCE_DIR}/external/rdf/rdf/inc/")
 include_directories("${PROJECT_SOURCE_DIR}/external/third_party/")
-include_directories("${PROJECT_SOURCE_DIR}/external/comgr_package/comgr/include/")
+include_directories("${PROJECT_SOURCE_DIR}/external/comgr/include/")
 include_directories("${PROJECT_SOURCE_DIR}/external/comgr_utils/")
 
 # rgd command line tool.
@@ -59,6 +59,10 @@ add_subdirectory(external/rmv/source/backend backend)
 set(SYSTEM_INFO_BUILD_RDF_INTERFACES ON)
 add_subdirectory(external/system_info_utils)
 
+# ISA Spec Manager.
+set(EXCLUDE_ISA_CLI_EXAMPLES_TESTS ON)
+add_subdirectory(external/isa_spec_manager)
+
 # Test rgd app.
 add_subdirectory(test/source/rgd_test)
 
@@ -67,16 +71,16 @@ add_subdirectory(external/comgr_utils ComgrUtils)
 
 # Define the location of dependent libraries
 IF(WIN32)
-    set(AMD_COMGR_LIBS_DIR ${PROJECT_SOURCE_DIR}/external/comgr_package/comgr/lib/VS2022/x64)
+    set(AMD_COMGR_LIBS_DIR ${PROJECT_SOURCE_DIR}/external/comgr/lib/VS2022/x64)
     set(AMDGPU_DIS_LIBS_DIR ${PROJECT_SOURCE_DIR}/external/amd_gpu_dis/Lib/VS2022/x64)
 ELSEIF(UNIX)
-    set(AMD_COMGR_LIBS_DIR ${PROJECT_SOURCE_DIR}/external/comgr_package/comgr/lib/x64)
+    set(AMD_COMGR_LIBS_DIR ${PROJECT_SOURCE_DIR}/external/comgr/lib/x64)
     set(AMDGPU_DIS_LIBS_DIR ${PROJECT_SOURCE_DIR}/external/amd_gpu_dis/Lib/Linux/x64)
 ENDIF()
 
 # Locate shared library components referenced by multiple targets
 IF(WIN32)
-    set (AMD_COMGR_LIB_FILENAME amd_comgr_2)
+    set (AMD_COMGR_LIB_FILENAME amd_comgr_3)
 ELSEIF(UNIX)
     set (AMD_COMGR_SHARED ${CMAKE_SHARED_LIBRARY_PREFIX}amd_comgr${CMAKE_SHARED_LIBRARY_SUFFIX})
     set (AMD_COMGR_LIB_FILENAME amd_comgr)
@@ -140,7 +144,7 @@ IF(WIN32)
     install(FILES external/amd_gpu_dis/Lib/VS2022/x64/amdgpu_dis.dll
         DESTINATION ./${CPACK_RGD_CLI_FULL_PACKAGE_NAME}
         COMPONENT rgd_cli_component)
-    install(FILES external/comgr_package/comgr/lib/VS2022/x64/amd_comgr_2.dll
+    install(FILES external/comgr/lib/VS2022/x64/amd_comgr_3.dll
         DESTINATION ./${CPACK_RGD_CLI_FULL_PACKAGE_NAME}
         COMPONENT rgd_cli_component)
     install(FILES external/third_party/DXC/bin/x64/dxc.exe
@@ -157,6 +161,13 @@ ELSEIF(UNIX)
         DESTINATION ./${CPACK_RGD_CLI_FULL_PACKAGE_NAME}/utils/dx12/dxc
         COMPONENT rgd_cli_component)
 ENDIF()
+
+# Install ISA spec files preserving the utils/isa_spec folder structure
+install(FILES external/isa_spec_xml/amdgpu_isa_rdna3.xml
+              external/isa_spec_xml/amdgpu_isa_rdna3_5.xml
+              external/isa_spec_xml/amdgpu_isa_rdna4.xml
+        DESTINATION ./${CPACK_RGD_CLI_FULL_PACKAGE_NAME}/utils/isa_spec
+        COMPONENT rgd_cli_component)
 
 # Archive RGD TEST configuration
 install(TARGETS rgd_test
@@ -186,10 +197,17 @@ IF(WIN32)
     install(FILES external/amd_gpu_dis/Lib/VS2022/x64/amdgpu_dis.dll
         DESTINATION ./${CPACK_ARCHIVE_RGD_TEST_COMPONENT_FILE_NAME}/${CPACK_RGD_CLI_FULL_PACKAGE_NAME}/
         COMPONENT rgd_test_component)
-    install(FILES external/comgr_package/comgr/lib/VS2022/x64/amd_comgr_2.dll
+    install(FILES external/comgr/lib/VS2022/x64/amd_comgr_3.dll
         DESTINATION ./${CPACK_ARCHIVE_RGD_TEST_COMPONENT_FILE_NAME}/${CPACK_RGD_CLI_FULL_PACKAGE_NAME}/
         COMPONENT rgd_test_component)
 ENDIF()
+
+# Install ISA spec files for RGD TEST component preserving the utils/isa_spec folder structure
+install(FILES external/isa_spec_xml/amdgpu_isa_rdna3.xml
+              external/isa_spec_xml/amdgpu_isa_rdna3_5.xml
+              external/isa_spec_xml/amdgpu_isa_rdna4.xml
+        DESTINATION ./${CPACK_ARCHIVE_RGD_TEST_COMPONENT_FILE_NAME}/${CPACK_RGD_CLI_FULL_PACKAGE_NAME}/utils/isa_spec
+        COMPONENT rgd_test_component)
 
 include(CPack)
 

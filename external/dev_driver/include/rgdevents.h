@@ -121,6 +121,7 @@ enum class KmdEventId : uint8_t
     RgdEventSeInfo        = DDCommonEventId::FirstEventIdForIndividualProvider + 2,
     RgdEventMmrRegisters  = DDCommonEventId::FirstEventIdForIndividualProvider + 3,
     RgdEventWaveRegisters = DDCommonEventId::FirstEventIdForIndividualProvider + 4,
+    SgprVgprRegisters     = DDCommonEventId::FirstEventIdForIndividualProvider + 5,
 };
 
 /// Header used in RGD events
@@ -313,17 +314,17 @@ struct WaveInfo
     {
         struct
         {
-            unsigned int waveId : 5;
-            unsigned int : 3;
-            unsigned int simdId : 2;
-            unsigned int wgpId : 4;
-            unsigned int : 2;
-            unsigned int saId : 1;
-            unsigned int : 1;
-            unsigned int seId : 4;
-            unsigned int reserved : 10;
+            unsigned int    waveId  : 5;
+            unsigned int            : 3;
+            unsigned int    simdId  : 2;
+            unsigned int    wgpId   : 4;
+            unsigned int            : 2;
+            unsigned int    saId    : 1;
+            unsigned int            : 1;
+            unsigned int    seId    : 4;
+            unsigned int    reserved: 10;
         };
-        uint32_t shaderId;
+        uint32_t        shaderId;
     };
 };
 
@@ -405,7 +406,23 @@ struct WaveRegistersData : RgdEvent
 {
     uint32_t version;
 
-    uint32_t shaderId;
+    union
+    {
+        struct
+        {
+            // Assumption is that wave, simd, wgp, sa won't change in the next 5 years, only SE
+            unsigned int    waveId  : 5;
+            unsigned int            : 3;
+            unsigned int    simdId  : 2;
+            unsigned int    wgpId   : 4;
+            unsigned int            : 2;
+            unsigned int    saId    : 1;
+            unsigned int            : 1;
+            unsigned int    seId    : 4;
+            unsigned int    reserved: 10;
+        };
+        uint32_t shaderId;
+    };
 
     // number of WaveRegisterInfo structures which follow
     uint32_t numRegisters;
@@ -413,6 +430,42 @@ struct WaveRegistersData : RgdEvent
     // array of WaveRegisterInfo
     // actual array length is `numRegisters`
     WaveRegisterInfo registerInfos[1];
+};
+
+// Maximum VGPR currently is 256
+constexpr uint32_t kMaxGPRRegs = 256;
+
+// This struct is a counterpart to nc_radeon_gpu_detective_bgd_gpr_data
+struct GprRegistersData : RgdEvent
+{
+    uint32_t version;
+
+    union
+    {
+        struct
+        {
+            unsigned int    waveId  : 5;
+            unsigned int            : 3;
+            unsigned int    simdId  : 2;
+            unsigned int    wgpId   : 4;
+            unsigned int            : 2;
+            unsigned int    saId    : 1;
+            unsigned int            : 1;
+            unsigned int    seId    : 4;
+            unsigned int    reserved: 10;
+        };
+        uint32_t shaderId;
+    };
+
+    // Also known as thread id, only applicable for VGPR
+    uint32_t workItem;
+
+    // The type of the registers, true for VGPR, false for SGPR
+    bool     isVgpr;
+
+    // This defines up to what value can be valid data (VGPR 256, SGPR 128)
+    uint32_t regToRead;
+    uint32_t reg[kMaxGPRRegs];
 };
 
 // Header information on how to interpret the info struct

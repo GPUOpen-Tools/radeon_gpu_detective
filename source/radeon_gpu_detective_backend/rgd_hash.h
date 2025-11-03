@@ -49,18 +49,9 @@ static bool Rgd128bitHashCompare(const Rgd128bitHash& a, const Rgd128bitHash& b)
 /// @brief Check if a 128-bit hash is zero.
 /// @param [in] a The hash to check.
 /// @return true if the hash is zero.
-static bool Rgd128bitHashIsZero(const Rgd128bitHash& a)
+inline bool Rgd128bitHashIsZero(const Rgd128bitHash& a)
 {
     return (a.low == 0) && (a.high == 0);
-}
-
-/// @brief Copy one 128-bit hash to another.
-/// @param [out] dest The destination hash.
-/// @param [in] src The source hash.
-static void Rgd128bitHashCopy(Rgd128bitHash& dest, const Rgd128bitHash& src)
-{
-    dest.low  = src.low;
-    dest.high = src.high;
 }
 
 /// @brief Overloaded operator to check if one hash is less than another hash.

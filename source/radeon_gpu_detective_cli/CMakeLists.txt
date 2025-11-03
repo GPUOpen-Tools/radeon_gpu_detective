@@ -99,3 +99,25 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E echo "copying ${DXC_SRC} to ${DXC_DST}"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${DXC_SRC} ${DXC_DST}
 )
+
+# Copy the ISA spec files to the output folder
+set(ISA_SPEC_DST "$<TARGET_FILE_DIR:${PROJECT_NAME}>/utils/isa_spec/")
+set(ISA_SPEC_SRC "${PROJECT_SOURCE_DIR}/../../external/isa_spec_xml/")
+
+# List of all ISA spec files to copy
+set(ISA_SPEC_FILES
+    "amdgpu_isa_rdna3.xml"
+    "amdgpu_isa_rdna3_5.xml"
+    "amdgpu_isa_rdna4.xml"
+)
+
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${ISA_SPEC_DST}
+)
+
+FOREACH (ISA_SPEC_FILE ${ISA_SPEC_FILES})
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E echo "copying ${ISA_SPEC_SRC}${ISA_SPEC_FILE} to ${ISA_SPEC_DST}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${ISA_SPEC_SRC}${ISA_SPEC_FILE} ${ISA_SPEC_DST}
+    )
+ENDFOREACH()

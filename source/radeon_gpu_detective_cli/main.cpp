@@ -32,7 +32,10 @@
 #include "rdf/rdf/inc/amdrdf.h"
 
 // System info.
+#pragma warning(push)
+#pragma warning(disable : 4201)  // nonstandard extension used: nameless struct/union.
 #include "system_info_utils/source/system_info_reader.h"
+#pragma warning(pop)
 
 // *** INTERNALLY-LINKED AUXILIARY FUNCTIONS - BEGIN ***
 
@@ -518,6 +521,8 @@ static void SerializeTextOutput(const RgdCrashDumpContents&     contents,
         txt << resource_info_string << std::endl;
     }
 
+    std::cout << "Page fault information analysis for the text representation completed." << std::endl;
+
     std::string input_info_str;
     RgdSerializer::InputInfoToString(user_config,
                                      contents,
@@ -530,12 +535,12 @@ static void SerializeTextOutput(const RgdCrashDumpContents&     contents,
     rgd_summary_txt << input_info_str;
     rgd_summary_txt << txt.str();
 
-    std::cout << "Page fault information analysis for the text representation completed." << std::endl;
-
     // Write the output to a file if required, otherwise print to console.
     if (!user_config.output_file_txt.empty())
     {
+        std::cout << "Saving text output to file..." << std::endl;
         RgdUtils::WriteTextFile(user_config.output_file_txt, rgd_summary_txt.str());
+        std::cout << "Text output saved to file: " << user_config.output_file_txt << std::endl;
     }
     else
     {
@@ -562,6 +567,7 @@ static bool PerformCrashAnalysis(const Config& user_config)
     {
         SerializeTextOutput(contents, user_config, resource_serializer, enhanced_crash_info_serializer);
     }
+    
     if (ret && is_json_required)
     {
         // JSON.
@@ -640,7 +646,12 @@ static bool PerformCrashAnalysis(const Config& user_config)
         serializer_json.SetInputInfo(user_config, contents, enhanced_crash_info_serializer.GetDebugInfoFiles());
         
         // Save the JSON file.
+        std::cout << "Saving JSON output to file..." << std::endl;
         serializer_json.SaveToFile(user_config);
+        std::cout << "JSON output saved to " << user_config.output_file_json << std::endl;
+        
+        // Manual cleanup to reduce destructor time.
+        serializer_json.Clear();
     }
 
     if (user_config.is_save_code_object_binaries)
@@ -694,6 +705,7 @@ int main(int argc, char* argv[])
                 ("full-source", "If specified, the output will include the full high level shader code if available.", cxxopts::value<bool>(user_config.is_full_source))
                 ("e,extended-output", "If specified, the text and JSON output will include more verbose information.", cxxopts::value<bool>(user_config.is_extended_output))
                 ("save-code-objects", "If specified, extracts all the Code Object binaries parsed from the input .rgd crash dump file.", cxxopts::value<bool>(user_config.is_save_code_object_binaries))
+                (kStrRawGprData, "If specified, VGPR and SGPR data will be included in the output (assuming the input .rgd file was captured with VGPR/SGPR collection enabled).", cxxopts::value<bool>(user_config.is_raw_gpr_data))
                 ;
 
             opts.add_options("internal")

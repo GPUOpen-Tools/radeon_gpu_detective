@@ -234,14 +234,9 @@ static bool IsInFlightShader(const std::map<uint64_t, size_t>& pc_offset_to_hung
     assert(shader_info.instructions.size() != 0);
     if (shader_info.instructions.size() != 0)
     {
-        uint64_t start_offset = shader_info.instructions[0].first;
-        uint64_t end_offset   = shader_info.instructions[shader_info.instructions.size() - 1].first;
-
         for (const std::pair<uint64_t, size_t>& pc_offset_to_hung_wave_count : pc_offset_to_hung_wave_count_map_)
         {
-            // Check if the PC offset falls within the range of the shader instructions.
-            // PC always points to the next instruction to execute. So it not expected to be equal to the offset for the first instruction in the shader.
-            if (pc_offset_to_hung_wave_count.first > start_offset && pc_offset_to_hung_wave_count.first <= end_offset)
+            if (shader_info.ContainsPcOffset(pc_offset_to_hung_wave_count.first))
             {
                 is_in_flight_shader = true;
                 break;
@@ -269,12 +264,12 @@ static uint64_t RgdGetSymbolSizeFromSymbolName(const std::string symbol_name, Rg
 }
 
 // Initialize the code object entry.
-static void RgdCodeObjDbInitCodeObjEntry(RgdCodeObjectEntry* entry)
+static void RgdCodeObjDbInitCodeObjEntry(RgdCodeObjectEntry* entry, ecitrace::GpuSeries gpu_series)
 {
     assert(entry != nullptr);
     if (entry != nullptr)
     {
-        if (RgdCodeObjDbCreateIsaContextAmdGpuDis(entry))
+        if (RgdCodeObjDbCreateIsaContextAmdGpuDis(entry, gpu_series))
         {
             AmdGpuDisStatus status = AMD_GPU_DIS_STATUS_FAILED;
 
@@ -592,9 +587,12 @@ static bool ParseSmallPdbFile(RgdDxbcParser& dxbc_parser, RgdShaderInfo& shader_
 static void LogDebugInfoExtractionFailure(const RgdShaderInfo& shader_info, const std::string& error_messages)
 {
     std::stringstream console_message;
-    console_message << "failed to extract debug info for in-flight shader 0x" << std::hex 
-                  << shader_info.api_shader_hash_hi << shader_info.api_shader_hash_lo 
-                  << std::dec << ". Errors encountered:" << std::endl << error_messages;
+    console_message << "failed to extract debug info for in-flight shader 0x" << std::hex << shader_info.api_shader_hash_hi << shader_info.api_shader_hash_lo
+                    << std::dec << ". ";
+    if (!error_messages.empty())
+    {
+        console_message << "Errors encountered:" << std::endl << error_messages;
+    }
     RgdUtils::PrintMessage(console_message.str().c_str(), RgdMessageType::kError, true);
 }
 
@@ -674,7 +672,8 @@ bool RgdCodeObjectDatabase::AddCodeObject(uint64_t               pc_instruction_
                                           uint64_t               api_pso_hash,
                                           size_t                 pc_wave_count,
                                           Rgd128bitHash          internal_pipeline_hash,
-                                          std::vector<uint8_t>&& code_object_payload)
+                                          std::vector<uint8_t>&& code_object_payload,
+                                          std::vector<uint32_t>&& wave_coords)
 {
     bool ret = true;
     if (!is_code_obj_db_built_)
@@ -693,6 +692,7 @@ bool RgdCodeObjectDatabase::AddCodeObject(uint64_t               pc_instruction_
 
             assert(entry.pc_offset_to_hung_wave_count_map_.find(pc_instruction_offset) == entry.pc_offset_to_hung_wave_count_map_.end());
             entry.pc_offset_to_hung_wave_count_map_[pc_instruction_offset] = pc_wave_count;
+            entry.pc_offset_to_wave_coords_map_[pc_instruction_offset] = std::move(wave_coords);
         }
         else
         {
@@ -709,6 +709,8 @@ bool RgdCodeObjectDatabase::AddCodeObject(uint64_t               pc_instruction_
                 // This pc instruction offset does not exist. Add it.
                 entry.pc_offset_to_hung_wave_count_map_[pc_instruction_offset] = pc_wave_count;
             }
+
+            entry.pc_offset_to_wave_coords_map_[pc_instruction_offset] = std::move(wave_coords);
         }
     }
     else
@@ -721,7 +723,7 @@ bool RgdCodeObjectDatabase::AddCodeObject(uint64_t               pc_instruction_
     return ret;
 }
 
-bool RgdCodeObjectDatabase::Populate()
+bool RgdCodeObjectDatabase::Populate(ecitrace::GpuSeries gpu_series)
 {
     bool ret = true;
     if (entries_.size() == 0)
@@ -756,7 +758,7 @@ bool RgdCodeObjectDatabase::Populate()
 
             for (RgdCodeObjectEntry& entry : entries_)
             {
-                RgdCodeObjDbInitCodeObjEntry(&entry);
+                RgdCodeObjDbInitCodeObjEntry(&entry, gpu_series);
             }
         }
         is_code_obj_db_built_ = ret;
@@ -765,7 +767,7 @@ bool RgdCodeObjectDatabase::Populate()
     return ret;
 }
 
-bool RgdCodeObjDbCreateIsaContextAmdGpuDis(RgdCodeObjectEntry* code_obj_entry)
+bool RgdCodeObjDbCreateIsaContextAmdGpuDis(RgdCodeObjectEntry* code_obj_entry, ecitrace::GpuSeries gpu_series)
 {
     bool ret = false;
     assert(code_obj_entry != nullptr);
@@ -779,6 +781,24 @@ bool RgdCodeObjDbCreateIsaContextAmdGpuDis(RgdCodeObjectEntry* code_obj_entry)
             status = rgd_disassembler_api_table.AmdGpuDisCreateContext(&context);
             if (status == AMD_GPU_DIS_STATUS_SUCCESS)
             {
+                // Only set the real-true16 option for RDNA3 or RDNA4 GPUs
+                if (gpu_series == ecitrace::GpuSeries::kNavi3 || gpu_series == ecitrace::GpuSeries::kNavi4 || gpu_series == ecitrace::GpuSeries::kStrix1)
+                {
+                    // For Gfx11 and Gfx12, we need to instruct the disassembler to recognize true16 instructions, using the "-mattr=+real-true16" option.
+                    if (nullptr != rgd_disassembler_api_table.SetOption)
+                    {
+                        status = rgd_disassembler_api_table.SetOption(context, "mattr", "+real-true16");
+                        if (status != AMD_GPU_DIS_STATUS_SUCCESS)
+                        {
+                            RgdUtils::PrintMessage("failed to set mattr option for the disassembler.", RgdMessageType::kWarning, true);
+                        }
+                    }
+                    else
+                    {
+                        RgdUtils::PrintMessage("additional options could not be set for the disassembler.", RgdMessageType::kWarning, true);
+                    }
+                }
+                // Continue with loading the code object buffer regardless of whether setting the option succeeded
                 status = rgd_disassembler_api_table.AmdGpuDisLoadCodeObjectBuffer(
                     context, (const char*)code_obj_entry->code_object_payload_.data(), code_obj_entry->code_obj_size_in_bytes_, false);
                 if (status == AMD_GPU_DIS_STATUS_SUCCESS)

@@ -25,7 +25,7 @@
 // JSON Schema version
 #define STRINGIFY_JSON_SCHEMA_VERSION(major, minor) STRINGIFY_MACRO(major) "." STRINGIFY_MACRO(minor)
 #define RGD_JSON_SCHEMA_VERSION_MAJOR 1
-#define RGD_JSON_SCHEMA_VERSION_MINOR 2
+#define RGD_JSON_SCHEMA_VERSION_MINOR 3
 #define RGD_JSON_SCHEMA_VERSION STRINGIFY_JSON_SCHEMA_VERSION(RGD_JSON_SCHEMA_VERSION_MAJOR, RGD_JSON_SCHEMA_VERSION_MINOR)
 
 // *** INTERNALLY-LINKED AUXILIARY CONSTANTS - BEGIN ***
@@ -74,11 +74,18 @@ public:
     // Set shader info.
     void SetShaderInfo(const Config& user_config, RgdEnhancedCrashInfoSerializer& enhanced_crash_info_serializer);
 
+    // Set raw GPR (VGPR and SGPR) data.
+    void SetGprData(const CrashData& kmd_crash_data);
+
     // Saves the JSON contents to a file.
     bool SaveToFile(const Config& user_config) const;
 
+    // Clear JSON data to reduce destructor time.
+    void Clear();
+
 private:
     nlohmann::json json_;
+    bool has_gpr_data_ = false;
 };
 
 #endif // RADEON_GPU_DETECTIVE_SOURCE_RGD_SERIALIZER_JSON_H_
