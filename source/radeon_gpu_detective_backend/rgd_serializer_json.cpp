@@ -134,8 +134,11 @@ void RgdSerializerJson::SetInputInfo(const Config& user_config, const RgdCrashDu
     // Hardware Crash Analysis status.
     json_[kJsonElemCrashAnalysisFile]["hardware_crash_analysis"] = contents.rgd_extended_info.is_hca_enabled ? kStrEnabled : kStrDisabled;
 
-    // SGPR/VGPR collection status.
-    json_[kJsonElemCrashAnalysisFile]["sgpr_vgpr_collection"] = contents.rgd_extended_info.is_capture_sgpr_vgpr_data ? kStrEnabled : kStrDisabled;
+    // SGPR collection status.
+    json_[kJsonElemCrashAnalysisFile]["sgpr_collection"] = contents.rgd_extended_info.is_capture_sgpr_data ? kStrEnabled : kStrDisabled;
+
+    // VGPR collection status.
+    json_[kJsonElemCrashAnalysisFile]["vgpr_collection"] = contents.rgd_extended_info.is_capture_vgpr_data ? kStrEnabled : kStrDisabled;
 }
 
 void RgdSerializerJson::SetSystemInfoData(const Config& user_config, const system_info_utils::SystemInfo& system_info)

@@ -19,6 +19,25 @@
 #include "rgd_code_object_comgr_handle.h"
 #include "rgd_dxbc_parser.h"
 
+// Enum to track why SRD analysis is not available for a shader.
+enum class SrdAnalysisUnavailableReason
+{
+    // Unknown or not yet determined.
+    kUnknown = 0,
+
+    // SGPR collection was not enabled.
+    kSgprCollectionNotEnabled,
+
+    // Instruction does not use resource descriptor.
+    kInstructionDoesNotUseResourceDescriptor,
+    
+    // SGPR data not available for active waves (only available for hung waves).
+    kDataNotAvailableForActiveWaves,
+    
+    // SRD analysis is available.
+    kAvailable
+};
+
 // Holds information about individual shader in a code object disassembly.
 struct RgdShaderInfo
 {
@@ -73,6 +92,9 @@ struct RgdShaderInfo
     // SRD analysis data for instructions that have SRD analysis.
     // Vector of pairs where first element is the instruction text and second is the SRD analysis text.
     std::vector<std::pair<std::string, std::string>> srd_analysis_data;
+
+    // Reason why SRD analysis is not available for this shader.
+    SrdAnalysisUnavailableReason srd_unavailable_reason = SrdAnalysisUnavailableReason::kUnknown;
 
     // Is this a crashing shader.
     bool is_in_flight_shader = false;

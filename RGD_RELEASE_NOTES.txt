@@ -1,3 +1,14 @@
+Radeon™ GPU Detective v1.6.1 Release Notes
+==========================================
+This is a patch release that addresses the following improvements:
+
+Highlights
+==========
+* Support individual options for wave SGPRs and VGPRs collection through RDP UI.
+* Improved reporting when SRD Analysis is not available.
+* Hardware Crash Analysis - improved disassembler support for in-flight shaders.
+* SRD Analysis - minor formatting changes to display some values as decimal rather than hex.
+
 Radeon™ GPU Detective v1.6 Release Notes
 ========================================
 Radeon™ GPU Detective (RGD) is a tool for post-mortem analysis of GPU crashes (TDRs).

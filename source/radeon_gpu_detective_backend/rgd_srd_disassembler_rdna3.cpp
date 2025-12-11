@@ -305,34 +305,34 @@ std::string SrdImageRdna3::ToString() const
     ss << "  Llc_NoAlloc: " << std::dec << fields.llc_noalloc << "\n";
     ss << "  " << kStrImageBigPage << ": " << (fields.big_page ? "true" : "false")
        << "\n";
-    ss << "  " << kStrImageMaxMip << ": 0x" << std::hex << fields.max_mip << "\n";
+    ss << "  " << kStrImageMaxMip << ": " << std::dec << fields.max_mip << "\n";
     ss << "  " << kStrImageFormat << ": " << GetImageFormatString(fields.format) << "\n";
-    ss << "  " << kStrImageWidth << ": 0x" << std::hex << fields.width << "\n";
-    ss << "  " << kStrImageHeight << ": 0x" << std::hex << fields.height << "\n";
+    ss << "  " << kStrImageWidth << ": " << std::dec << fields.width << "\n";
+    ss << "  " << kStrImageHeight << ": " << std::dec << fields.height << "\n";
     ss << "  " << kStrImageDstSelX << ": " << GetDstSelString(fields.dstsel_x) << "\n";
     ss << "  " << kStrImageDstSelY << ": " << GetDstSelString(fields.dstsel_y) << "\n";
     ss << "  " << kStrImageDstSelZ << ": " << GetDstSelString(fields.dstsel_z) << "\n";
     ss << "  " << kStrImageDstSelW << ": " << GetDstSelString(fields.dstsel_w) << "\n";
-    ss << "  " << kStrImageBaseLevel << ": 0x" << std::hex << fields.base_level << "\n";
-    ss << "  " << kStrImageLastLevel << ": 0x" << std::hex << fields.last_level << "\n";
+    ss << "  " << kStrImageBaseLevel << ": " << std::dec << fields.base_level << "\n";
+    ss << "  " << kStrImageLastLevel << ": " << std::dec << fields.last_level << "\n";
     ss << "  " << "Swizzle mode" << ": " << GetSwizzleModeString(fields.sw_mode) << "\n";
     ss << "  " << kStrImageBcSwizzle << ": " << GetBcSwizzleString(fields.bc_swizzle)
        << "\n";
     ss << "  " << kStrImageType << ": " << GetImageTypeString(fields.rsrcType) << "\n";
     if (IsDepthPitch(fields.rsrcType)) {
-        ss << "  Pitch: 0x" << std::hex << fields.depth << "\n";
+        ss << "  Pitch: " << std::dec << fields.depth << "\n";
     }
     else if (fields.rsrcType == SQ_RSRC_IMG_3D)
     {
-        ss << "  " << kStrImageDepth << ": 0x" << std::hex << fields.depth << "\n";
+        ss << "  " << kStrImageDepth << ": " << std::dec << fields.depth << "\n";
     }
     else
     {
-        ss << "  Last_Array: 0x" << std::hex << fields.depth << "\n";
+        ss << "  Last_Array: " << std::dec << fields.depth << "\n";
     }
-    ss << "  " << kStrImageBaseArray << ": 0x" << std::hex << fields.base_array << "\n";
-    ss << "  " << kStrImageArrayPitch << ": 0x" << std::hex << fields.array_pitch << "\n";
-    ss << "  " << kStrImageMinLodWarn3 << ": 0x" << std::hex << fields.min_lod_warn << "\n";
+    ss << "  " << kStrImageBaseArray << ": " << std::dec << fields.base_array << "\n";
+    ss << "  " << kStrImageArrayPitch << ": " << std::dec << fields.array_pitch << "\n";
+    ss << "  " << kStrImageMinLodWarn3 << ": " << std::dec << fields.min_lod_warn << "\n";
     ss << "  Perf_mod: 0x" << std::hex << fields.perf_mod << "\n";
     ss << "  " << kStrImageCornerSamples << ": " << (fields.corner_sample ? "true" : "false") << "\n";
     ss << "  " << "Linked_resource" << ": " << (fields.linked_resource ? "true" : "false") << "\n";
@@ -340,8 +340,8 @@ std::string SrdImageRdna3::ToString() const
     ss << "  " << kStrImageMinLod << ": " << std::dec << fields.min_lod << "\n";
     ss << "  " << kStrImageIterate256 << ": " << (fields.iterate_256 ? "true" : "false") << "\n";
     ss << "  " << "Sample_pattern_offset" << ": " << std::dec << fields.sample_pattern_offset << "\n";
-    ss << "  " << "Max_uncompressed_block_Size" << ": 0x" << std::hex << fields.max_uncompressed_block_size << "\n";
-    ss << "  " << "Max_compressed_block_Size" << ": 0x" << std::hex << fields.max_compressed_block_size << "\n";
+    ss << "  " << "Max_uncompressed_block_Size" << ": " << std::dec << fields.max_uncompressed_block_size << "\n";
+    ss << "  " << "Max_compressed_block_Size" << ": " << std::dec << fields.max_compressed_block_size << "\n";
     ss << "  " << kStrImageMetaPipeAligned << ": " << (fields.meta_pipe_aligned ? "true" : "false") << "\n";
     ss << "  Write_compress_en: " << (fields.write_compress_en ? "true" : "false") << "\n";
     ss << "  " << kStrImageCompressionEn << ": " << (fields.compression_en ? "true" : "false") << "\n";

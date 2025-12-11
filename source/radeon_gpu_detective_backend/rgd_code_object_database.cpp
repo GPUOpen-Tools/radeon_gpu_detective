@@ -30,7 +30,7 @@ static bool RgdCodeObjDbInitializeComgrHandles(RgdCodeObjectDatabase* code_objec
     assert(code_object_db != nullptr);
     
     bool ret = true;
-    if (code_object_db != nullptr || code_object_db->entries_.size() == 0)
+    if (code_object_db == nullptr || code_object_db->entries_.size() == 0)
     {
         ret = false;
     }
@@ -166,7 +166,7 @@ static void BuildInstructionsVectorForShader(const std::string&                 
     std::regex symbol_entry_point_regex(R"((_amdgpu_.._main):)");
     std::regex instruction_regex(R"((^\s*)(.+)(//\s)([0-9a-fA-F]+):(\s[0-9a-fA-F]+){1,3})");
     std::regex branch_label_regex(R"(^_L[\d]+:)");
-    std::regex padding_instruction_s_code_end_regex(R"((^\s*)(s_code_end)(.+))");
+    std::regex padding_instruction_symend_regex(R"((_amdgpu_.._main_symend):)");
 
     bool is_entry_point_found = false;
     uint64_t start_offset     = UINT64_MAX;
@@ -193,7 +193,9 @@ static void BuildInstructionsVectorForShader(const std::string&                 
 
         if (is_entry_point_found)
         {
-            if (std::regex_match(line, match, padding_instruction_s_code_end_regex))
+            // This symbol is what we use to compute size and denote the end of the data.
+            // Beyond this point, disassembled offsets may be invalid.
+            if (std::regex_match(line, match, padding_instruction_symend_regex))
             {
                 break;
             }
@@ -209,12 +211,13 @@ static void BuildInstructionsVectorForShader(const std::string&                 
                     end_offset   = start_offset + symbol_size;
                 }
 
-                if (offset < end_offset)
+                if (offset < end_offset && offset >= start_offset)
                 {
                     out_instructions_vector.emplace_back(offset, line);
                 }
                 else
                 {
+                    assert(false);  // Should never happen. We should see the _symend before this happens.
                     break;
                 }
             }

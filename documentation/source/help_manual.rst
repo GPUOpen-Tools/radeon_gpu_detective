@@ -71,7 +71,8 @@ This section is titled ``CRASH ANALYSIS FILE`` and contains information about th
 * **API**: API (DirectX 12 or Vulkan) that was used by the crashing application.
 * **PDB files used [DX12 only]**: the list of PDB files that were used to generate the crash analysis summary report.
 * **Hardware Crash Analysis**: whether the Hardware Crash Analysis feature was enabled when the crash dump was captured.
-* **SGPR/VGPR collection**: whether SGPRs and VGPRs register collection was enabled when the crash dump was captured.
+* **SGPR collection**: whether wave SGPRs collection was enabled when the crash dump was captured.
+* **VGPR collection**: whether wave VGPRs collection was enabled when the crash dump was captured.
 
 System information
 """"""""""""""""""
@@ -407,7 +408,7 @@ The ``SHADER INFO`` section will list the following information for each shader 
   * **Shader IO and resource bindings**          : [DX12 only] Information about the shader's input/output and resource bindings, if available.
   * **HLSL source code**                         : [DX12 only] The HLSL source code of the shader, if available.
   * **Disassembly**                              : Disassembly of the shader showing the consolidated pointers to instruction/s which were being executed by one or more wavefronts at the time of the crash.
-  * **Shader Resource Descriptor (SRD) Analysis**: When the offending (or in‑flight) instruction uses SGPR-resident resource descriptors (e.g. image / buffer / sampler / BVH SRDs) and SGPR register collection was enabled at capture time, RGD decodes the relevant 32 or 64 bit words and appends an ``SRD ANALYSIS`` subsection to the SHADER INFO entry. See the section :ref:`Shader Resource Descriptor (SRD) Analysis <srd_analysis>` for more details.
+  * **Shader Resource Descriptor (SRD) Analysis**: When the offending (or in‑flight) instruction uses SGPR-resident resource descriptors (e.g. image / buffer / sampler / BVH SRDs) and wave SGPRs collection was enabled at capture time, RGD decodes the relevant 32 or 64 bit words and appends an ``SRD ANALYSIS`` subsection to the SHADER INFO entry. See the section :ref:`Shader Resource Descriptor (SRD) Analysis <srd_analysis>` for more details.
   
 
 Here is an example of a shader info::
@@ -692,7 +693,7 @@ This feature can be helpful in diagnosing issues like stale, corrupted, or incor
 
 For more information about individual SRD fields, please refer :ref:`SRD Field Descriptions <srd_field_descriptions>` section.
 
-Here is an example output when SGPRs and VGPRs collection was enabled at capture time and the offending instruction uses image and sampler SRDs::
+Here is an example output when SGPRs collection was enabled at capture time and the offending instruction uses image and sampler SRDs::
 
     Shader Resource Descriptor (SRD) Analysis
     =========================================
@@ -763,10 +764,10 @@ Here is an example output when SGPRs and VGPRs collection was enabled at capture
             Border Color Type: SQ_TEX_BORDER_COLOR_OPAQUE_WHITE (2)
 
 .. note::
-  When wave SGPRs and VGPRs collection is enabled, RGD collects the SGPRs and VGPRs for all the active waves at the time of the crash. This may result in a longer capture time and a significantly larger crash dump file generated.
+  When wave SGPRs and/or VGPRs collection is enabled, RGD collects the SGPRs and VGPRs for all the active waves at the time of the crash. This may result in a longer capture time and a significantly larger crash dump file generated.
   By default, raw VGPR and SGPR data is excluded from RGD crash analysis summary output file to prevent bloating the output. To include this data, rerun the rgd CLI tool with the ``--raw-gpr-data`` option.
 
-  The SRD analysis feature requires SGPR/VGPR register collection to be enabled at capture time. Since SGPR/VGPR collection increases the crash dump (.rgd) file size, this option is not enabled by default in the Radeon Developer Panel (RDP). You can easily enable this option through the RDP UI before starting any Crash Analysis session if necessary.
+  The SRD analysis feature requires wave SGPRs collection to be enabled at capture time. Since SGPR/VGPR collection may increase the crash dump (.rgd) file size, these options are not enabled by default in the Radeon Developer Panel (RDP). You can easily enable these options individually through the RDP UI before starting any Crash Analysis session if necessary.
 
 Interpreting the results
 ^^^^^^^^^^^^^^^^^^^^^^^^

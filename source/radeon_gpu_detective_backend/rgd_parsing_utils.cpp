@@ -785,9 +785,14 @@ bool RgdParsingUtils::ParseRgdExtendedInfoChunk(rdf::ChunkFile& chunk_file, cons
                             extended_info.is_enable_single_memory_op = hca_flags[kJsonElemEnableSingleMemOp].get<bool>();
                         }
 
-                        if (hca_flags.contains(kJsonElemCaptureSgprVgprData))
+                        if (hca_flags.contains(kJsonElemCaptureSgprData))
                         {
-                            extended_info.is_capture_sgpr_vgpr_data = hca_flags[kJsonElemCaptureSgprVgprData].get<bool>();
+                            extended_info.is_capture_sgpr_data = hca_flags[kJsonElemCaptureSgprData].get<bool>();
+                        }
+
+                        if (hca_flags.contains(kJsonElemCaptureVgprData))
+                        {
+                            extended_info.is_capture_vgpr_data = hca_flags[kJsonElemCaptureVgprData].get<bool>();
                         }
                     }
                     
