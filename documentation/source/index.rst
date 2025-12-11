@@ -42,7 +42,7 @@ Capture GPU crash dump
    * Please note, Hardware Crash Analysis feature is enabled by default.
    * Optionally, provide PDB search paths in the "DXC shader PDB Search Paths" field to enable high-level shader details in the crash analysis report.
    * For more information about the Hardware Crash Analysis and Debug Info features, please see the RGD :doc:`help_manual`.
-   * Optionally, enable wave SGPRs and VGPRs collection to get more information about the resource descriptors used by an in-flight instruction at the time of the crash. This will increase the size of the generated .rgd file.
+   * Optionally, enable wave SGPRs to get more information about the resource descriptors used by an in-flight instruction at the time of the crash. This will increase the size of the generated .rgd file.
 
 .. image:: images/select-text-output-format.png 
 

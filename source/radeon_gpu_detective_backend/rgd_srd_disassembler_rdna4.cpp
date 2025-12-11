@@ -307,39 +307,39 @@ std::string SrdImageRdna4::ToString() const
     ImageFields fields = ExtractFields();
     
     ss << "  " << kStrImageBaseAddr << ": 0x" << std::hex << fields.base_address << "\n";
-    ss << "  " << kStrImageMaxMip << ": 0x" << std::hex << fields.max_mip << "\n";
+    ss << "  " << kStrImageMaxMip << ": " << std::dec << fields.max_mip << "\n";
     ss << "  " << kStrImageFormat << ": " << GetImageFormatString(fields.format) << "\n";
-    ss << "  " << kStrImageBaseLevel << ": 0x" << std::hex << fields.base_level << "\n";
-    ss << "  " << kStrImageWidth << ": 0x" << std::hex << fields.width << "\n";
-    ss << "  " << kStrImageHeight << ": 0x" << std::hex << fields.height << "\n";
+    ss << "  " << kStrImageBaseLevel << ": " << std::dec << fields.base_level << "\n";
+    ss << "  " << kStrImageWidth << ": " << std::dec << fields.width << "\n";
+    ss << "  " << kStrImageHeight << ": " << std::dec << fields.height << "\n";
     ss << "  " << kStrImageDstSelX << ": " << GetDstSelString(fields.dstsel_x) << "\n";
     ss << "  " << kStrImageDstSelY << ": " << GetDstSelString(fields.dstsel_y) << "\n";
     ss << "  " << kStrImageDstSelZ << ": " << GetDstSelString(fields.dstsel_z) << "\n";
     ss << "  " << kStrImageDstSelW << ": " << GetDstSelString(fields.dstsel_w) << "\n";
     ss << "  " << "No_edge_clamp" << ": " << (fields.no_edge_clamp ? "true" : "false") << "\n";
-    ss << "  " << kStrImageLastLevel << ": 0x" << std::hex << fields.last_level << "\n";
+    ss << "  " << kStrImageLastLevel << ": " << std::dec << fields.last_level << "\n";
     ss << "  " << "Swizzle mode" << ": " << GetSwizzleModeString(fields.sw_mode) << "\n";
     ss << "  " << kStrImageBcSwizzle << ": " << GetBcSwizzleString(fields.bc_swizzle) << "\n";
     ss << "  " << kStrImageType << ": " << GetImageTypeString(fields.rsrcType) << "\n";
     if (IsDepthPitch(fields.rsrcType))
     {
-        ss << "  Pitch: 0x" << std::hex << fields.depth << "\n";
+        ss << "  Pitch: " << std::dec << fields.depth << "\n";
     }
     else if (fields.rsrcType == SQ_RSRC_IMG_3D)
     {
-        ss << "  " << kStrImageDepth << ": 0x" << std::hex << fields.depth << "\n";
+        ss << "  " << kStrImageDepth << ": " << std::dec << fields.depth << "\n";
     }
     else
     {
-        ss << "  " << "Last_array" << ": 0x" << std::hex << fields.depth << "\n";
+        ss << "  " << "Last_array" << ": " << std::dec << fields.depth << "\n";
     }
-    ss << "  " << kStrImageBaseArray << ": 0x" << std::hex << fields.base_array << "\n";
+    ss << "  " << kStrImageBaseArray << ": " << std::dec << fields.base_array << "\n";
     ss << "  " << kStrImageUav3d << ": " << (fields.uav3d ? "true" : "false") << "\n";
-    ss << "  " << kStrImageMinLodWarn4 << ": 0x" << std::hex << fields.min_lod_warn << "\n";
+    ss << "  " << kStrImageMinLodWarn4 << ": " << std::dec << fields.min_lod_warn << "\n";
     ss << "  Perf_mod: 0x" << std::hex << fields.perf_mod << "\n";
     ss << "  Corner_sample: " << (fields.corner_sample ? "true" : "false") << "\n";
     ss << "  Linked_resource: " << (fields.linked_resource ? "true" : "false") << "\n";
-    ss << "  " << kStrImageMinLod << ": 0x" << std::hex << fields.min_lod << "\n";
+    ss << "  " << kStrImageMinLod << ": " << std::dec << fields.min_lod << "\n";
     ss << "  Iterate_256: " << (fields.iterate_256 ? "true" : "false") << "\n";
     ss << "  Sample_pattern_offset: " << std::dec << fields.sample_pattern_offset << "\n";
     ss << "  Max_uncompressed_block_size: " << fields.max_uncompressed_block_size << "\n";

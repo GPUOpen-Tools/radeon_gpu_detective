@@ -14,7 +14,7 @@ project (RGD)
 # Define version information
 set(RGD_MAJOR_VERSION 1)
 set(RGD_MINOR_VERSION 6)
-set(RGD_PATCH_NUMBER 0)
+set(RGD_PATCH_NUMBER 1)
 if (NOT RGD_BUILD_NUMBER)
     set(RGD_BUILD_NUMBER 0)
 endif ()

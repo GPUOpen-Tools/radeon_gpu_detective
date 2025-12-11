@@ -343,7 +343,8 @@ void RgdSerializer::InputInfoToString(const Config&                        user_
         txt << std::endl;
     }
     txt << "Hardware Crash Analysis: " << (contents.rgd_extended_info.is_hca_enabled ? kStrEnabled : kStrDisabled) << std::endl;
-    txt << "SGPR/VGPR collection: " << (contents.rgd_extended_info.is_capture_sgpr_vgpr_data ? kStrEnabled : kStrDisabled) << std::endl;
+    txt << "SGPR collection: " << (contents.rgd_extended_info.is_capture_sgpr_data ? kStrEnabled : kStrDisabled) << std::endl;
+    txt << "VGPR collection: " << (contents.rgd_extended_info.is_capture_vgpr_data ? kStrEnabled : kStrDisabled) << std::endl;
     txt << std::endl;
 
     input_info_str = txt.str();

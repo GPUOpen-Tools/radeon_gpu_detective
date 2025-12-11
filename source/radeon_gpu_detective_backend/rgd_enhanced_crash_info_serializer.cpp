@@ -32,6 +32,19 @@ static constexpr size_t kMaxLinesToShowFullSource = 120;
 static constexpr size_t kMaxInitialSourceLines    = 10;
 static constexpr size_t kSourceContextLines       = 34;
 
+// SRD analysis unavailability reason strings.
+static constexpr const char* kSrdUnavailableReasonInstructionDoesNotUseDescriptor = "the page fault suspect instruction does not use a resource descriptor";
+static constexpr const char* kSrdUnavailableReasonDataNotAvailable = "SGPR collection was enabled but data could not be collected for the in-flight waves";
+static constexpr const char* kSrdUnavailableReasonUnknown = "Unknown";
+
+// GPR data collection status strings.
+static constexpr const char* kMsgSgprCollectionNotEnabled = "SGPR collection was not enabled";
+static constexpr const char* kMsgVgprCollectionNotEnabled = "VGPR collection was not enabled";
+static constexpr const char* kMsgNoSgprEventFound = "no SGPR event found for this wave";
+static constexpr const char* kMsgNoVgprEventsFound = "no VGPR events found for this wave";
+static constexpr const char* kMsgSgprData = "SGPR data";
+static constexpr const char* kMsgVgprData = "VGPR data";
+
 // Factory class to create the crash info registers parser based on the asic architecture.
 class CrashInfoRegistersParserFactory
 {
@@ -355,8 +368,11 @@ public:
     /// @brief Set the crash type - page fault or hang.
     void SetIsPageFault(bool is_page_fault);
 
-    /// @brief Set the SGPR/VGPR collection flag status.
-    void SetIsSgprVgprCollectionEnabled(bool is_enabled);
+    /// @brief Set the SGPR collection flag status.
+    void SetIsSgprCollectionEnabled(bool is_enabled);
+
+    /// @brief Set the VGPR collection flag status.
+    void SetIsVgprCollectionEnabled(bool is_enabled);
 
     /// @brief Set the trace API type.
     void SetTraceApiType(TraceApiType trace_api_type);
@@ -394,12 +410,14 @@ private:
                                      const std::map<uint64_t, std::vector<uint32_t>>& pc_offset_to_wave_coords_map_,
                                      std::vector<std::pair<uint64_t, std::string>>& instructions,
                                      std::string&                                   out_disassembly_text,
-                                     std::vector<std::pair<std::string, std::string>>* srd_analysis_data = nullptr);    
+                                     std::vector<std::pair<std::string, std::string>>* srd_analysis_data = nullptr,
+                                     SrdAnalysisUnavailableReason* srd_unavailable_reason = nullptr);    
     
     void GetDisassemblyJson(const std::map<uint64_t, size_t>&              pc_offset_to_hung_wave_count_map_,
                             const std::map<uint64_t, std::vector<uint32_t>>& pc_offset_to_wave_coords_map_,
                             std::vector<std::pair<uint64_t, std::string>>& instructions,
-                            nlohmann::json&                                out_disassembly_json);
+                            nlohmann::json&                                out_disassembly_json,
+                            SrdAnalysisUnavailableReason* srd_unavailable_reason = nullptr);
 
     /// @brief Calculate the instruction ranges around the program counter to print the disassembly text.
     void CalculateInstructionRangesToPrint(const std::map<uint64_t, size_t>&                    pc_offset_to_hung_wave_count_map_,
@@ -408,7 +426,8 @@ private:
                                            std::vector<std::pair<size_t, size_t>>&              out_instruction_ranges,
                                            bool is_annotate = true,
                                            std::vector<std::pair<std::string, std::string>>* srd_analysis_data = nullptr,
-                                           nlohmann::json* srd_analysis_json = nullptr);
+                                           nlohmann::json* srd_analysis_json = nullptr,
+                                           SrdAnalysisUnavailableReason* srd_unavailable_reason = nullptr);
 
     /// @brief  In the disassembly text, annotate the instruction/s which caused the crash in case of a page fault or the last instruction executed for the wave in case it was a hang.
     void AnnotateCrashingInstruction(size_t             pc_wave_count,
@@ -419,7 +438,8 @@ private:
     /// @brief Generate SRD analysis for an offending instruction when at least one of the operands is using SGPRs and SGPR collection was enabled at the time of the crash.
     void GenerateSrdAnalysisForInstruction(const std::string& crashing_instr_disassembly,
                                           const std::vector<uint32_t>& wave_coords,
-                                          std::vector<std::pair<std::string, std::string>>* srd_analysis_data);
+                                          std::vector<std::pair<std::string, std::string>>* srd_analysis_data,
+                                          SrdAnalysisUnavailableReason* srd_unavailable_reason = nullptr);
 
     /// @brief Generate SRD analysis JSON for an offending instruction when at least one of the operands is using SGPRs and SGPR collection was enabled at the time of the crash.
     void GenerateSrdAnalysisForInstructionJson(const std::string& crashing_instr_disassembly,
@@ -429,8 +449,11 @@ private:
     /// @brief Get the page fault status.
     bool IsPageFault() const;
 
-    /// @brief Get the SGPR/VGPR collection flag status.
-    bool IsSgprVgprCollectionEnabled() const;
+    /// @brief Get the SGPR collection flag status.
+    bool IsSgprCollectionEnabled() const;
+
+    /// @brief Get the VGPR collection flag status.
+    bool IsVgprCollectionEnabled() const;
 
     /// @brief Get the trace API type.
     TraceApiType GetTraceApiType() const;
@@ -479,8 +502,9 @@ private:
     // The trace API type.
     TraceApiType trace_api_{0};
 
-    // SGPR/VGPR collection flags.
-    bool is_gpr_collection_enabled_{false};
+    // SGPR/VGPR collection flags (separate).
+    bool is_sgpr_collection_enabled_{false};
+    bool is_vgpr_collection_enabled_{false};
 
     // SRD instruction analyzer for detecting SGPR usage and SRD disassembly.
     std::unique_ptr<SrdInstructionAnalyzer> srd_analyzer_;
@@ -514,8 +538,9 @@ bool RgdEnhancedCrashInfoSerializer::Initialize(const Config& user_config, RgdCr
     // Set the API type.
     enhanced_crash_info_serializer_impl_->SetTraceApiType(rgd_crash_dump_contents.api_info.apiType);
 
-    // Set wave SGPRs/VGPRs collection flags.
-    enhanced_crash_info_serializer_impl_->SetIsSgprVgprCollectionEnabled(rgd_crash_dump_contents.rgd_extended_info.is_capture_sgpr_vgpr_data);
+    // Set wave SGPRs/VGPRs collection flags separately.
+    enhanced_crash_info_serializer_impl_->SetIsSgprCollectionEnabled(rgd_crash_dump_contents.rgd_extended_info.is_capture_sgpr_data);
+    enhanced_crash_info_serializer_impl_->SetIsVgprCollectionEnabled(rgd_crash_dump_contents.rgd_extended_info.is_capture_vgpr_data);
 
     if (rgd_crash_dump_contents.rgd_extended_info.is_hca_enabled)
     {
@@ -649,19 +674,26 @@ bool RgdEnhancedCrashInfoSerializer::Impl::BuildCrashingCodeObjectDatabase(const
     // Store reference to KMD crash data for GPR access.
     kmd_crash_data_ = &rgd_crash_dump_contents.kmd_crash_data;
 
-    // Build GPR event index for efficient lookup only if SGPR/VGPR collection is enabled.
-    if (IsSgprVgprCollectionEnabled())
+    // Build GPR event index for efficient lookup if any GPR collection is enabled.
+    if (IsSgprCollectionEnabled() || IsVgprCollectionEnabled())
     {
         BuildGprEventIndex(rgd_crash_dump_contents.kmd_crash_data);
     }
 
-    // Initialize SRD instruction analyzer.
-    srd_analyzer_ = std::make_unique<SrdInstructionAnalyzer>();
-    if (!srd_analyzer_->Initialize(rgd_crash_dump_contents, wave_coords_to_gpr_event_indices_))
+    // Initialize SRD instruction analyzer only if SGPR collection is enabled (required for SRD analysis).
+    if (IsSgprCollectionEnabled())
     {
-        // SRD analysis is optional, so continue even if it fails.
-        RgdUtils::PrintMessage("Failed to initialize SRD analyzer. SRD analysis will be disabled.", RgdMessageType::kWarning, user_config.is_verbose);
-        srd_analyzer_.reset();
+        srd_analyzer_ = std::make_unique<SrdInstructionAnalyzer>();
+        if (!srd_analyzer_->Initialize(rgd_crash_dump_contents, wave_coords_to_gpr_event_indices_))
+        {
+            // SRD analysis is optional, so continue even if it fails.
+            RgdUtils::PrintMessage("Failed to initialize SRD analyzer. SRD analysis will be disabled.", RgdMessageType::kWarning, user_config.is_verbose);
+            srd_analyzer_.reset();
+        }
+    }
+    else
+    {
+        RgdUtils::PrintMessage((std::string(kMsgSgprCollectionNotEnabled) + ". SRD analysis will be disabled.").c_str(), RgdMessageType::kInfo, user_config.is_verbose);
     }
 
     // Build the enhanced crash info register context for relevant asic architecture (RDNA) and parse the required registers info.
@@ -952,7 +984,7 @@ bool RgdEnhancedCrashInfoSerializer::Impl::BuildInFlightShaderInfo(const Config&
                 txt << "===========" << std::endl;
 
                 std::string out_shader_disassembly_text;
-                PostProcessDisassemblyText(entry.pc_offset_to_hung_wave_count_map_, entry.pc_offset_to_wave_coords_map_, shader_info.instructions, out_shader_disassembly_text, &shader_info.srd_analysis_data);
+                PostProcessDisassemblyText(entry.pc_offset_to_hung_wave_count_map_, entry.pc_offset_to_wave_coords_map_, shader_info.instructions, out_shader_disassembly_text, &shader_info.srd_analysis_data, &shader_info.srd_unavailable_reason);
 
                 txt << out_shader_disassembly_text << std::endl;
 
@@ -974,7 +1006,22 @@ bool RgdEnhancedCrashInfoSerializer::Impl::BuildInFlightShaderInfo(const Config&
                 }
                 else
                 {
-                    txt << kStrNotAvailable << std::endl;
+                    // Display a detailed message based on why SRD analysis is not available.
+                    switch (shader_info.srd_unavailable_reason)
+                    {
+                        case SrdAnalysisUnavailableReason::kSgprCollectionNotEnabled:
+                            txt << kStrNotAvailable << " (" << kMsgSgprCollectionNotEnabled << ")" << std::endl;
+                            break;
+                        case SrdAnalysisUnavailableReason::kInstructionDoesNotUseResourceDescriptor:
+                            txt << kStrNotAvailable << " (" << kSrdUnavailableReasonInstructionDoesNotUseDescriptor << ")" << std::endl;
+                            break;
+                        case SrdAnalysisUnavailableReason::kDataNotAvailableForActiveWaves:
+                            txt << kStrNotAvailable << " (" << kSrdUnavailableReasonDataNotAvailable << ")" << std::endl;
+                            break;
+                        default:
+                            txt << kStrNotAvailable << std::endl;
+                            break;
+                    }
                 }
 
                 // Add GPR data section if requested.
@@ -1024,7 +1071,7 @@ bool RgdEnhancedCrashInfoSerializer::Impl::BuildInFlightShaderInfoJson(const Con
                     BuildHighLevelSourceJson(shader_info.high_level_source, shader_info.entry_point_name, user_config.is_full_source, shader_info_json[kJsonElemSourceCode]);
 
                     nlohmann::json disassembly_json;
-                    GetDisassemblyJson(entry.pc_offset_to_hung_wave_count_map_, entry.pc_offset_to_wave_coords_map_, shader_info.instructions_json_output, disassembly_json);
+                    GetDisassemblyJson(entry.pc_offset_to_hung_wave_count_map_, entry.pc_offset_to_wave_coords_map_, shader_info.instructions_json_output, disassembly_json, &shader_info.srd_unavailable_reason);
                     shader_info_json[kJsonElemDisassembly] = disassembly_json;
 
                     // Add GPR data if requested
@@ -1046,13 +1093,14 @@ void RgdEnhancedCrashInfoSerializer::Impl::PostProcessDisassemblyText(
     const std::map<uint64_t, std::vector<uint32_t>>& pc_offset_to_wave_coords_map_,
     std::vector<std::pair<uint64_t, std::string>>& instructions,
     std::string&                                   out_disassembly_text,
-    std::vector<std::pair<std::string, std::string>>* srd_analysis_data)
+    std::vector<std::pair<std::string, std::string>>* srd_analysis_data,
+    SrdAnalysisUnavailableReason* srd_unavailable_reason)
 {
     assert(!instructions.empty());
     if (!instructions.empty())
     {
         std::vector<std::pair<size_t, size_t>> instruction_ranges;
-        CalculateInstructionRangesToPrint(pc_offset_to_hung_wave_count_map_, pc_offset_to_wave_coords_map_, instructions, instruction_ranges, true, srd_analysis_data, nullptr);
+        CalculateInstructionRangesToPrint(pc_offset_to_hung_wave_count_map_, pc_offset_to_wave_coords_map_, instructions, instruction_ranges, true, srd_analysis_data, nullptr, srd_unavailable_reason);
         assert(!instruction_ranges.empty());
         if (!instruction_ranges.empty())
         {
@@ -1099,7 +1147,8 @@ void RgdEnhancedCrashInfoSerializer::Impl::PostProcessDisassemblyText(
 void RgdEnhancedCrashInfoSerializer::Impl::GetDisassemblyJson(const std::map<uint64_t, size_t>& pc_offset_to_hung_wave_count_map_,
                                                                                           const std::map<uint64_t, std::vector<uint32_t>>& pc_offset_to_wave_coords_map_,
                                                                                           std::vector<std::pair<uint64_t, std::string>>& instructions,
-                                                                                          nlohmann::json&                                out_disassembly_json)
+                                                                                          nlohmann::json&                                out_disassembly_json,
+                                                                                          SrdAnalysisUnavailableReason* srd_unavailable_reason)
 {
     assert(!instructions.empty());
     if (!instructions.empty())
@@ -1109,7 +1158,7 @@ void RgdEnhancedCrashInfoSerializer::Impl::GetDisassemblyJson(const std::map<uin
         // Do not annotate the page fault suspect instruction/s for the JSON output.
         bool                                   is_annotate = false;
         nlohmann::json                         srd_analysis_json;
-        CalculateInstructionRangesToPrint(pc_offset_to_hung_wave_count_map_, pc_offset_to_wave_coords_map_, instructions, instruction_ranges, is_annotate, nullptr, &srd_analysis_json);
+        CalculateInstructionRangesToPrint(pc_offset_to_hung_wave_count_map_, pc_offset_to_wave_coords_map_, instructions, instruction_ranges, is_annotate, nullptr, &srd_analysis_json, srd_unavailable_reason);
         assert(!instruction_ranges.empty());
         if (!instruction_ranges.empty())
         {
@@ -1187,6 +1236,27 @@ void RgdEnhancedCrashInfoSerializer::Impl::GetDisassemblyJson(const std::map<uin
                 {
                     out_disassembly_json["srd_analysis"] = srd_analysis_json;
                 }
+                else if (srd_unavailable_reason != nullptr)
+                {
+                    // Add SRD unavailability reason to JSON output.
+                    std::string reason_str;
+                    switch (*srd_unavailable_reason)
+                    {
+                        case SrdAnalysisUnavailableReason::kSgprCollectionNotEnabled:
+                            reason_str = kMsgSgprCollectionNotEnabled;
+                            break;
+                        case SrdAnalysisUnavailableReason::kInstructionDoesNotUseResourceDescriptor:
+                            reason_str = kSrdUnavailableReasonInstructionDoesNotUseDescriptor;
+                            break;
+                        case SrdAnalysisUnavailableReason::kDataNotAvailableForActiveWaves:
+                            reason_str = kSrdUnavailableReasonDataNotAvailable;
+                            break;
+                        default:
+                            reason_str = kSrdUnavailableReasonUnknown;
+                            break;
+                    }
+                    out_disassembly_json["srd_analysis_unavailable_reason"] = reason_str;
+                }
             }
             catch (nlohmann::json::exception& e)
             {
@@ -1203,7 +1273,8 @@ void RgdEnhancedCrashInfoSerializer::Impl::CalculateInstructionRangesToPrint(
     std::vector<std::pair<size_t, size_t>>&              out_instruction_ranges,
     bool is_annotate,
     std::vector<std::pair<std::string, std::string>>* srd_analysis_data,
-    nlohmann::json* srd_analysis_json)
+    nlohmann::json* srd_analysis_json,
+    SrdAnalysisUnavailableReason* srd_unavailable_reason)
 {
     constexpr int kInstructionRange               = 17;
     size_t        max_instruction_disassembly_len = GetMaxDisassemblyLenForInstructions(instructions);
@@ -1276,7 +1347,7 @@ void RgdEnhancedCrashInfoSerializer::Impl::CalculateInstructionRangesToPrint(
                 // Generate text SRD analysis if requested.
                 if (srd_analysis_data != nullptr)
                 {
-                    GenerateSrdAnalysisForInstruction(crashing_instr_disassembly, wave_coords, srd_analysis_data);
+                    GenerateSrdAnalysisForInstruction(crashing_instr_disassembly, wave_coords, srd_analysis_data, srd_unavailable_reason);
                 }
                 
                 // Generate JSON SRD analysis if requested.
@@ -1372,10 +1443,12 @@ void RgdEnhancedCrashInfoSerializer::Impl::AnnotateCrashingInstruction(size_t   
 
 void RgdEnhancedCrashInfoSerializer::Impl::GenerateSrdAnalysisForInstruction(const std::string& crashing_instr_disassembly,
                                                                              const std::vector<uint32_t>& wave_coords,
-                                                                             std::vector<std::pair<std::string, std::string>>* srd_analysis_data)
+                                                                             std::vector<std::pair<std::string, std::string>>* srd_analysis_data,
+                                                                             SrdAnalysisUnavailableReason* srd_unavailable_reason)
 {
     // Add SRD analysis if offending instruction uses SGPRs and SGPR collection was enabled at the time of the crash.
-    if (srd_analyzer_ != nullptr && srd_analysis_data != nullptr)
+    // SRD analysis requires SGPR data to be available.
+    if (IsSgprCollectionEnabled() && srd_analyzer_ != nullptr && srd_analysis_data != nullptr)
     {
         if (!wave_coords.empty())
         {
@@ -1441,8 +1514,36 @@ void RgdEnhancedCrashInfoSerializer::Impl::GenerateSrdAnalysisForInstruction(con
                 if (!final_analysis.empty())
                 {
                     srd_analysis_data->emplace_back(crashing_instr_disassembly, final_analysis);
+                    if (srd_unavailable_reason != nullptr)
+                    {
+                        *srd_unavailable_reason = SrdAnalysisUnavailableReason::kAvailable;
+                    }
+                }
+                else
+                {
+                    // SGPR data not available for the waves (likely all waves are marked as 'ACTIVE' and SGPR data is only captured for 'HUNG' waves).
+                    if (srd_unavailable_reason != nullptr && sgpr_signature_to_wave_coords.empty())
+                    {
+                        *srd_unavailable_reason = SrdAnalysisUnavailableReason::kDataNotAvailableForActiveWaves;
+                    }
                 }
             }
+            else
+            {
+                // Instruction does not use SGPRs for resource descriptors.
+                if (srd_unavailable_reason != nullptr)
+                {
+                    *srd_unavailable_reason = SrdAnalysisUnavailableReason::kInstructionDoesNotUseResourceDescriptor;
+                }
+            }
+        }
+    }
+    else
+    {
+        // SGPR collection was not enabled.
+        if (srd_unavailable_reason != nullptr && !IsSgprCollectionEnabled())
+        {
+            *srd_unavailable_reason = SrdAnalysisUnavailableReason::kSgprCollectionNotEnabled;
         }
     }
 }
@@ -1452,7 +1553,8 @@ void RgdEnhancedCrashInfoSerializer::Impl::GenerateSrdAnalysisForInstructionJson
                                                                                   nlohmann::json& out_srd_analysis_json)
 {
     // Add SRD analysis if offending instruction uses SGPRs and SGPR collection was enabled at the time of the crash.
-    if (srd_analyzer_ != nullptr)
+    // SRD analysis requires SGPR data to be available.
+    if (IsSgprCollectionEnabled() && srd_analyzer_ != nullptr)
     {
         if (!wave_coords.empty())
         {
@@ -1528,9 +1630,14 @@ void RgdEnhancedCrashInfoSerializer::Impl::SetIsPageFault(bool is_page_fault)
     is_page_fault_ = is_page_fault;
 }
 
-void RgdEnhancedCrashInfoSerializer::Impl::SetIsSgprVgprCollectionEnabled(bool is_enabled)
+void RgdEnhancedCrashInfoSerializer::Impl::SetIsSgprCollectionEnabled(bool is_enabled)
 {
-    is_gpr_collection_enabled_ = is_enabled;
+    is_sgpr_collection_enabled_ = is_enabled;
+}
+
+void RgdEnhancedCrashInfoSerializer::Impl::SetIsVgprCollectionEnabled(bool is_enabled)
+{
+    is_vgpr_collection_enabled_ = is_enabled;
 }
 
 void RgdEnhancedCrashInfoSerializer::Impl::SetTraceApiType(TraceApiType trace_api_type)
@@ -1553,9 +1660,14 @@ bool RgdEnhancedCrashInfoSerializer::Impl::IsPageFault() const
     return is_page_fault_;
 }
 
-bool RgdEnhancedCrashInfoSerializer::Impl::IsSgprVgprCollectionEnabled() const
+bool RgdEnhancedCrashInfoSerializer::Impl::IsSgprCollectionEnabled() const
 {
-    return is_gpr_collection_enabled_;
+    return is_sgpr_collection_enabled_;
+}
+
+bool RgdEnhancedCrashInfoSerializer::Impl::IsVgprCollectionEnabled() const
+{
+    return is_vgpr_collection_enabled_;
 }
 
 void RgdEnhancedCrashInfoSerializer::Impl::BuildGprEventIndex(const CrashData& kmd_crash_data)
@@ -1613,8 +1725,10 @@ std::string RgdEnhancedCrashInfoSerializer::Impl::GetGprDataForShader(const std:
     result << "Shader VGPR and SGPR data" << std::endl;
     result << "=========================" << std::endl;
 
-    // Only proceed if GPR data is requested, GPR data collection was enabled at the time of the capture and KMD crash data is available.
-    if (user_config.is_raw_gpr_data && IsSgprVgprCollectionEnabled() && kmd_crash_data_ != nullptr)
+    bool has_any_gpr_data = IsSgprCollectionEnabled() || IsVgprCollectionEnabled();
+
+    // Only proceed if GPR data is requested, any GPR collection was enabled and KMD crash data is available.
+    if (user_config.is_raw_gpr_data && has_any_gpr_data && kmd_crash_data_ != nullptr)
     {
         // Collect shader IDs/Wave coordinates for this shader's PC offsets.
         // pc_offset_to_hung_wave_count_map contains offsets for all the shaders withing the code object.
@@ -1654,7 +1768,10 @@ std::string RgdEnhancedCrashInfoSerializer::Impl::GetGprDataForShader(const std:
             for (uint32_t current_wave_coordinates : wave_coords_for_this_shader)
             {
                 auto it = wave_coords_to_gpr_event_indices_.find(current_wave_coordinates);
-                if (it != wave_coords_to_gpr_event_indices_.end() && it->second.first != 0)
+                
+                // Check if we have at least SGPR or some VGPR data.
+                if (it != wave_coords_to_gpr_event_indices_.end() && 
+                    (it->second.first != 0 || !it->second.second.empty()))
                 {
                     matching_shader_events.push_back(*it);
                 }
@@ -1662,7 +1779,7 @@ std::string RgdEnhancedCrashInfoSerializer::Impl::GetGprDataForShader(const std:
             
             if (!matching_shader_events.empty())
             {
-                // Calculate total number of waves (shader IDs/Wave coordinates with SGPR data).
+                // Calculate total number of waves (shader IDs/Wave coordinates with any GPR data).
                 size_t total_waves = matching_shader_events.size();
                 size_t current_wave_index = 1;
                 
@@ -1673,20 +1790,43 @@ std::string RgdEnhancedCrashInfoSerializer::Impl::GetGprDataForShader(const std:
                     size_t sgpr_event_index = shader_event.second.first;
                     const std::vector<size_t>& vgpr_event_indices = shader_event.second.second;
                     
-                    const RgdEventOccurrence& sgpr_event_occurrence = kmd_crash_data_->events[sgpr_event_index];
-                    const GprRegistersData& sgpr_event = static_cast<const GprRegistersData&>(*sgpr_event_occurrence.rgd_event);
-                    
                     result << std::endl;
                     result << "*** Wave " << current_wave_index << "/" << total_waves << ": ***" << std::endl;
                     result << "Wave coordinate ID: 0x" << std::hex << current_wave_coordinates << std::dec << std::endl;
-                    result << RgdSerializer::EventGprRegisterDataToString(sgpr_event) << std::endl;
                     
-                    // Print VGPR events using indices.
-                    for (size_t vgpr_index : vgpr_event_indices)
+                    // Print SGPR data if available
+                    if (sgpr_event_index != 0 && IsSgprCollectionEnabled())
                     {
-                        const RgdEventOccurrence& vgpr_event_occurrence = kmd_crash_data_->events[vgpr_index];
-                        const GprRegistersData& vgpr_event = static_cast<const GprRegistersData&>(*vgpr_event_occurrence.rgd_event);
-                        result << RgdSerializer::EventGprRegisterDataToString(vgpr_event) << std::endl;
+                        const RgdEventOccurrence& sgpr_event_occurrence = kmd_crash_data_->events[sgpr_event_index];
+                        const GprRegistersData& sgpr_event = static_cast<const GprRegistersData&>(*sgpr_event_occurrence.rgd_event);
+                        result << RgdSerializer::EventGprRegisterDataToString(sgpr_event) << std::endl;
+                    }
+                    else if (IsSgprCollectionEnabled())
+                    {
+                        result << kMsgSgprData << ": " << kStrNotAvailable << " (" << kMsgNoSgprEventFound << ")" << std::endl;
+                    }
+                    else
+                    {
+                        result << kMsgSgprData << ": " << kStrNotAvailable << " (" << kMsgSgprCollectionNotEnabled << ")" << std::endl;
+                    }
+                    
+                    // Print VGPR data if available
+                    if (!vgpr_event_indices.empty() && IsVgprCollectionEnabled())
+                    {
+                        for (size_t vgpr_index : vgpr_event_indices)
+                        {
+                            const RgdEventOccurrence& vgpr_event_occurrence = kmd_crash_data_->events[vgpr_index];
+                            const GprRegistersData& vgpr_event = static_cast<const GprRegistersData&>(*vgpr_event_occurrence.rgd_event);
+                            result << RgdSerializer::EventGprRegisterDataToString(vgpr_event) << std::endl;
+                        }
+                    }
+                    else if (IsVgprCollectionEnabled())
+                    {
+                        result << kMsgVgprData << ": " << kStrNotAvailable << " (" << kMsgNoVgprEventsFound << ")" << std::endl;
+                    }
+                    else
+                    {
+                        result << kMsgVgprData << ": " << kStrNotAvailable << " (" << kMsgVgprCollectionNotEnabled << ")" << std::endl;
                     }
                     
                     current_wave_index++;
@@ -1694,27 +1834,54 @@ std::string RgdEnhancedCrashInfoSerializer::Impl::GetGprDataForShader(const std:
             }
             else
             {
-                // No SGPR/VGPR data found for the shader IDs/Wave coordinates.
-                const char* kStrNoSgprVgprData = "wave SGPRs/VGPRs collection was enabled at the time of the capture but no data was found.";
-                result << kStrNotAvailable << " (" << kStrNoSgprVgprData << ")" << std::endl;
-                RgdUtils::PrintMessage(kStrNoSgprVgprData, RgdMessageType::kError, true);
+                // Provide more specific error message
+                std::string availability_msg;
+                if (IsSgprCollectionEnabled() && IsVgprCollectionEnabled())
+                {
+                    availability_msg = "SGPR and VGPR collection was enabled";
+                }
+                else if (IsSgprCollectionEnabled())
+                {
+                    availability_msg = "SGPR collection was enabled";
+                }
+                else if (IsVgprCollectionEnabled())
+                {
+                    availability_msg = "VGPR collection was enabled";
+                }
+                
+                result << kStrNotAvailable << " (" << availability_msg << " at the time of the capture but no data was found.)" << std::endl;
+                RgdUtils::PrintMessage((availability_msg + " but no GPR data was found.").c_str(), RgdMessageType::kError, true);
                 assert(false);
             }
         }
     }
-    else if (!user_config.is_raw_gpr_data && IsSgprVgprCollectionEnabled() && kmd_crash_data_ != nullptr)
+    else if (!user_config.is_raw_gpr_data && has_any_gpr_data && kmd_crash_data_ != nullptr)
     {
-        // wave SGPRs/VGPRs collection was enabled at the time of the capture but '--raw-gpr-data' was not specified.
-        result << "By default, raw VGPR and SGPR data is excluded from the output file to prevent bloating the output. To include this data, rerun the rgd CLI tool with the '--" << kStrRawGprData << "' option." << std::endl;
+        // Determine what was enabled
+        std::string enabled_types;
+        if (IsSgprCollectionEnabled() && IsVgprCollectionEnabled())
+        {
+            enabled_types = "VGPR and SGPR";
+        }
+        else if (IsSgprCollectionEnabled())
+        {
+            enabled_types = "SGPR";
+        }
+        else if (IsVgprCollectionEnabled())
+        {
+            enabled_types = "VGPR";
+        }
+        
+        result << "By default, raw " << enabled_types << " data is excluded from the output file to prevent bloating the output. To include this data, rerun the rgd CLI tool with the '--" << kStrRawGprData << "' option." << std::endl;
     }
-    else if (!IsSgprVgprCollectionEnabled() && kmd_crash_data_ != nullptr)
+    else if (!has_any_gpr_data && kmd_crash_data_ != nullptr)
     {
-        // wave SGPRs/VGPRs collection was not enabled at the time of the capture.
-        result << kStrNotAvailable << " (wave SGPRs/VGPRs collection was not enabled at the time of the capture.)" << std::endl;
+        // Neither SGPR nor VGPR collection was enabled at the time of the capture.
+        result << kStrNotAvailable << " (neither SGPR nor VGPR collection was enabled at the time of the capture.)" << std::endl;
     }
     else
     {
-        result << kStrNotAvailable << " (wave SGPRs/VGPRs data not available - unknown error.)" << std::endl;
+        result << kStrNotAvailable << " (GPR data not available - unknown error.)" << std::endl;
     }
 
     return result.str();
@@ -1722,8 +1889,10 @@ std::string RgdEnhancedCrashInfoSerializer::Impl::GetGprDataForShader(const std:
 
 void RgdEnhancedCrashInfoSerializer::Impl::GetGprDataForShaderJson(const std::map<uint64_t, size_t>& pc_offset_to_hung_wave_count_map, const std::map<uint64_t, std::vector<uint32_t>>& pc_offset_to_wave_coords_map, const RgdShaderInfo& shader_info, const Config& user_config, nlohmann::json& out_json) const
 {
-    // Only proceed if GPR data is requested, GPR data collection was enabled at the time of the capture and KMD crash data is available.
-    if (user_config.is_raw_gpr_data && IsSgprVgprCollectionEnabled() && kmd_crash_data_ != nullptr)
+    bool has_any_gpr_data = IsSgprCollectionEnabled() || IsVgprCollectionEnabled();
+
+    // Only proceed if GPR data is requested, any GPR collection was enabled and KMD crash data is available.
+    if (user_config.is_raw_gpr_data && has_any_gpr_data && kmd_crash_data_ != nullptr)
     {
         // Collect shader IDs/Wave coordinates for this shader's PC offsets.
         // pc_offset_to_hung_wave_count_map contains offsets for all the shaders withing the code object.
@@ -1762,81 +1931,77 @@ void RgdEnhancedCrashInfoSerializer::Impl::GetGprDataForShaderJson(const std::ma
             for (uint32_t current_wave_coordinates : wave_coords_for_this_shader)
             {
                 auto it = wave_coords_to_gpr_event_indices_.find(current_wave_coordinates);
-                if (it != wave_coords_to_gpr_event_indices_.end() && it->second.first != 0)
+                if (it != wave_coords_to_gpr_event_indices_.end() && 
+                    (it->second.first != 0 || !it->second.second.empty()))
                 {
                     size_t sgpr_event_index = it->second.first;
                     const std::vector<size_t>& vgpr_event_indices = it->second.second;
                     
-                    const RgdEventOccurrence* event_occurrence = &kmd_crash_data_->events[sgpr_event_index];
-                    const GprRegistersData& gpr_event = static_cast<const GprRegistersData&>(*event_occurrence->rgd_event);
-                    const uint32_t wave_id = gpr_event.waveId;
-                    const uint32_t simd_id = gpr_event.simdId;
-                    const uint32_t wgp_id = gpr_event.wgpId;
-                    const uint32_t sa_id = gpr_event.saId;
-                    const uint32_t se_id = gpr_event.seId;
-                    
-                    nlohmann::json gpr_entry;
-                    gpr_entry["timestamp"] = event_occurrence->event_time;
-                    gpr_entry["type"] = "SGPR";
-                    gpr_entry[SrdAnalysisJsonFields::kJsonElemWaveCoordinateId] = current_wave_coordinates;
-                    gpr_entry["se_id"] = se_id;
-                    gpr_entry["sa_id"] = sa_id;
-                    gpr_entry["wgp_id"] = wgp_id;
-                    gpr_entry["simd_id"] = simd_id;
-                    gpr_entry["wave_id"] = wave_id;
-                    gpr_entry["work_item"] = gpr_event.workItem;
-                    gpr_entry["registers_to_read"] = gpr_event.regToRead;
-
-                    // Add register values.
-                    const uint32_t reg_count = gpr_event.regToRead;
-                    if (reg_count > 0)
+                    // Add SGPR data if available
+                    if (sgpr_event_index != 0 && IsSgprCollectionEnabled())
                     {
-                        std::vector<uint32_t> register_values_vec(gpr_event.reg, gpr_event.reg + reg_count);
-                        gpr_entry["register_values"] = std::move(register_values_vec);
-                    }
-                    else
-                    {
-                        gpr_entry["register_values"] = nlohmann::json::array();
-                    }
-                    
-                    gpr_data_array.emplace_back(std::move(gpr_entry));
-                    
-                    // Process VGPR events using indices.
-                    for (size_t vgpr_index : vgpr_event_indices)
-                    {
-                        const RgdEventOccurrence* vgpr_event_occurrence = &kmd_crash_data_->events[vgpr_index];
-                        const GprRegistersData& vgpr_event = static_cast<const GprRegistersData&>(*vgpr_event_occurrence->rgd_event);
-                        const uint32_t vgpr_wave_id = vgpr_event.waveId;
-                        const uint32_t vgpr_simd_id = vgpr_event.simdId;
-                        const uint32_t vgpr_wgp_id = vgpr_event.wgpId;
-                        const uint32_t vgpr_sa_id = vgpr_event.saId;
-                        const uint32_t vgpr_se_id = vgpr_event.seId;
+                        const RgdEventOccurrence* event_occurrence = &kmd_crash_data_->events[sgpr_event_index];
+                        const GprRegistersData& gpr_event = static_cast<const GprRegistersData&>(*event_occurrence->rgd_event);
                         
-                        nlohmann::json vgpr_entry;
-                        vgpr_entry["timestamp"] = vgpr_event_occurrence->event_time;
-                        vgpr_entry["type"] = "VGPR";
-                        vgpr_entry[SrdAnalysisJsonFields::kJsonElemWaveCoordinateId] = current_wave_coordinates;
-                        vgpr_entry["se_id"] = vgpr_se_id;
-                        vgpr_entry["sa_id"] = vgpr_sa_id;
-                        vgpr_entry["wgp_id"] = vgpr_wgp_id;
-                        vgpr_entry["simd_id"] = vgpr_simd_id;
-                        vgpr_entry["wave_id"] = vgpr_wave_id;
-                        vgpr_entry["work_item"] = vgpr_event.workItem;
-                        vgpr_entry["registers_to_read"] = vgpr_event.regToRead;
+                        nlohmann::json gpr_entry;
+                        gpr_entry["timestamp"] = event_occurrence->event_time;
+                        gpr_entry["type"] = "SGPR";
+                        gpr_entry[SrdAnalysisJsonFields::kJsonElemWaveCoordinateId] = current_wave_coordinates;
+                        gpr_entry["se_id"] = gpr_event.seId;
+                        gpr_entry["sa_id"] = gpr_event.saId;
+                        gpr_entry["wgp_id"] = gpr_event.wgpId;
+                        gpr_entry["simd_id"] = gpr_event.simdId;
+                        gpr_entry["wave_id"] = gpr_event.waveId;
+                        gpr_entry["work_item"] = gpr_event.workItem;
+                        gpr_entry["registers_to_read"] = gpr_event.regToRead;
 
-                        // Add register values.
-                        const uint32_t vgpr_reg_count = vgpr_event.regToRead;
-                        if (vgpr_reg_count > 0)
+                        const uint32_t reg_count = gpr_event.regToRead;
+                        if (reg_count > 0)
                         {
-                            std::vector<uint32_t> vgpr_register_values_vec(vgpr_event.reg, vgpr_event.reg + vgpr_reg_count);
-                            vgpr_entry["register_values"] = std::move(vgpr_register_values_vec);
+                            std::vector<uint32_t> register_values_vec(gpr_event.reg, gpr_event.reg + reg_count);
+                            gpr_entry["register_values"] = std::move(register_values_vec);
                         }
                         else
                         {
-                            vgpr_entry["register_values"] = nlohmann::json::array();
+                            gpr_entry["register_values"] = nlohmann::json::array();
                         }
                         
-                        gpr_data_array.emplace_back(std::move(vgpr_entry));
+                        gpr_data_array.emplace_back(std::move(gpr_entry));
+                    }
+                    
+                    // Process VGPR events if available
+                    if (!vgpr_event_indices.empty() && IsVgprCollectionEnabled())
+                    {
+                        for (size_t vgpr_index : vgpr_event_indices)
+                        {
+                            const RgdEventOccurrence* vgpr_event_occurrence = &kmd_crash_data_->events[vgpr_index];
+                            const GprRegistersData& vgpr_event = static_cast<const GprRegistersData&>(*vgpr_event_occurrence->rgd_event);
+                            
+                            nlohmann::json vgpr_entry;
+                            vgpr_entry["timestamp"] = vgpr_event_occurrence->event_time;
+                            vgpr_entry["type"] = "VGPR";
+                            vgpr_entry[SrdAnalysisJsonFields::kJsonElemWaveCoordinateId] = current_wave_coordinates;
+                            vgpr_entry["se_id"] = vgpr_event.seId;
+                            vgpr_entry["sa_id"] = vgpr_event.saId;
+                            vgpr_entry["wgp_id"] = vgpr_event.wgpId;
+                            vgpr_entry["simd_id"] = vgpr_event.simdId;
+                            vgpr_entry["wave_id"] = vgpr_event.waveId;
+                            vgpr_entry["work_item"] = vgpr_event.workItem;
+                            vgpr_entry["registers_to_read"] = vgpr_event.regToRead;
+
+                            const uint32_t vgpr_reg_count = vgpr_event.regToRead;
+                            if (vgpr_reg_count > 0)
+                            {
+                                std::vector<uint32_t> vgpr_register_values_vec(vgpr_event.reg, vgpr_event.reg + vgpr_reg_count);
+                                vgpr_entry["register_values"] = std::move(vgpr_register_values_vec);
+                            }
+                            else
+                            {
+                                vgpr_entry["register_values"] = nlohmann::json::array();
+                            }
+                            
+                            gpr_data_array.emplace_back(std::move(vgpr_entry));
+                        }
                     }
                 }
             }

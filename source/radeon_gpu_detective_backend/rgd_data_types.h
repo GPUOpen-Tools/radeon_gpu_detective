@@ -112,7 +112,8 @@ static const char* kJsonElemHcaFlags          = "hcaFlags";
 static const char* kJsonElemCaptureWaveData   = "captureWaveData";
 static const char* kJsonElemEnableSingleAluOp = "enableSingleAluOp";
 static const char* kJsonElemEnableSingleMemOp = "enableSingleMemOp";
-static const char* kJsonElemCaptureSgprVgprData = "captureSgprVgprData";
+static const char* kJsonElemCaptureSgprData   = "captureSgprData";
+static const char* kJsonElemCaptureVgprData   = "captureVgprData";
 static const char* kJsonElemPdbSearchPaths    = "pdbSearchPaths";
 static const char* kErrorMsgInvalidRgdExtendedInfoJson = "invalid RgdExtendedInfo JSON";
 
@@ -296,7 +297,8 @@ struct RgdExtendedInfo
     bool                     is_capture_wave_data{false};
     bool                     is_enable_single_alu_op{false};
     bool                     is_enable_single_memory_op{false};
-    bool                     is_capture_sgpr_vgpr_data{false};
+    bool                     is_capture_sgpr_data{false};
+    bool                     is_capture_vgpr_data{false};
 };
 
 // Holds the parsed contents of a crash dump RDF file.
