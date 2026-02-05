@@ -33,6 +33,12 @@ enum class SrdAnalysisUnavailableReason
     
     // SGPR data not available for active waves (only available for hung waves).
     kDataNotAvailableForActiveWaves,
+
+    // ISA spec/Decoder unavailable.
+    kIsaDecoderUnavailable,
+
+    // ISA decoder failed to decode instruction.
+    kIsaDecodingFailed,
     
     // SRD analysis is available.
     kAvailable

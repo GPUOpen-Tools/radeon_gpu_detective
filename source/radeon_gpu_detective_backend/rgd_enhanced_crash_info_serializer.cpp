@@ -35,6 +35,8 @@ static constexpr size_t kSourceContextLines       = 34;
 // SRD analysis unavailability reason strings.
 static constexpr const char* kSrdUnavailableReasonInstructionDoesNotUseDescriptor = "the page fault suspect instruction does not use a resource descriptor";
 static constexpr const char* kSrdUnavailableReasonDataNotAvailable = "SGPR collection was enabled but data could not be collected for the in-flight waves";
+static constexpr const char* kSrdUnavailableReasonIsaDecoderUnavailable = "ISA Decoder not initialized.";
+static constexpr const char* kSrdUnavailableReasonIsaDecodingFailed     = "ISA Decoding failed to parse instruction.";
 static constexpr const char* kSrdUnavailableReasonUnknown = "Unknown";
 
 // GPR data collection status strings.
@@ -1018,6 +1020,12 @@ bool RgdEnhancedCrashInfoSerializer::Impl::BuildInFlightShaderInfo(const Config&
                         case SrdAnalysisUnavailableReason::kDataNotAvailableForActiveWaves:
                             txt << kStrNotAvailable << " (" << kSrdUnavailableReasonDataNotAvailable << ")" << std::endl;
                             break;
+                        case SrdAnalysisUnavailableReason::kIsaDecoderUnavailable:
+                            txt << kStrNotAvailable << " (" << kSrdUnavailableReasonIsaDecoderUnavailable << ")" << std::endl;
+                            break;
+                        case SrdAnalysisUnavailableReason::kIsaDecodingFailed:
+                            txt << kStrNotAvailable << " (" << kSrdUnavailableReasonIsaDecodingFailed << ")" << std::endl;
+                            break;
                         default:
                             txt << kStrNotAvailable << std::endl;
                             break;
@@ -1251,6 +1259,12 @@ void RgdEnhancedCrashInfoSerializer::Impl::GetDisassemblyJson(const std::map<uin
                         case SrdAnalysisUnavailableReason::kDataNotAvailableForActiveWaves:
                             reason_str = kSrdUnavailableReasonDataNotAvailable;
                             break;
+                        case SrdAnalysisUnavailableReason::kIsaDecoderUnavailable:
+                            reason_str = kSrdUnavailableReasonIsaDecoderUnavailable;
+                            break;
+                        case SrdAnalysisUnavailableReason::kIsaDecodingFailed:
+                            reason_str = kSrdUnavailableReasonIsaDecodingFailed;
+                            break;
                         default:
                             reason_str = kSrdUnavailableReasonUnknown;
                             break;
@@ -1454,7 +1468,8 @@ void RgdEnhancedCrashInfoSerializer::Impl::GenerateSrdAnalysisForInstruction(con
         {
             // Detect SGPR usage for the instruction.
             std::vector<SrdInstructionAnalyzer::SgprGroup> sgpr_groups;
-            if (srd_analyzer_->DetectSgprUsage(crashing_instr_disassembly, sgpr_groups))
+            SrdAnalysisUnavailableReason result = srd_analyzer_->DetectSgprUsage(crashing_instr_disassembly, sgpr_groups);
+            if (result == SrdAnalysisUnavailableReason::kAvailable)
             {
                 // Group shader IDs/Wave coordinates by their SGPR values to consolidate SRD analysis.
                 std::map<std::string, std::vector<uint32_t>> sgpr_signature_to_wave_coords;
@@ -1530,10 +1545,10 @@ void RgdEnhancedCrashInfoSerializer::Impl::GenerateSrdAnalysisForInstruction(con
             }
             else
             {
-                // Instruction does not use SGPRs for resource descriptors.
+                // Use result reason for SRD unavailability.
                 if (srd_unavailable_reason != nullptr)
                 {
-                    *srd_unavailable_reason = SrdAnalysisUnavailableReason::kInstructionDoesNotUseResourceDescriptor;
+                    *srd_unavailable_reason = result;
                 }
             }
         }
@@ -1562,7 +1577,7 @@ void RgdEnhancedCrashInfoSerializer::Impl::GenerateSrdAnalysisForInstructionJson
             {
                 // Detect SGPR usage for the instruction.
                 std::vector<SrdInstructionAnalyzer::SgprGroup> sgpr_groups;
-                if (srd_analyzer_->DetectSgprUsage(crashing_instr_disassembly, sgpr_groups))
+                if (srd_analyzer_->DetectSgprUsage(crashing_instr_disassembly, sgpr_groups) == SrdAnalysisUnavailableReason::kAvailable)
                 {
                     // Group shader IDs/Wave coordinates by their SGPR values to consolidate SRD analysis.
                     std::map<std::string, std::vector<uint32_t>> sgpr_signature_to_wave_coords;
@@ -1872,7 +1887,35 @@ std::string RgdEnhancedCrashInfoSerializer::Impl::GetGprDataForShader(const std:
             enabled_types = "VGPR";
         }
         
-        result << "By default, raw " << enabled_types << " data is excluded from the output file to prevent bloating the output. To include this data, rerun the rgd CLI tool with the '--" << kStrRawGprData << "' option." << std::endl;
+        // Parse the events to see if any GPR data is present. If not, likely a misconfiguration/incorrect driver.
+        bool gpr_events_found = false;
+        for(const auto& event : kmd_crash_data_->events)
+        {
+            if(event.rgd_event != nullptr)
+            {
+                if (event.rgd_event->header.eventId == uint8_t(KmdEventId::SgprVgprRegisters))
+                {
+                    gpr_events_found = true;
+                    break;
+                }
+            }
+        }
+
+        if (gpr_events_found)
+        {
+            if (!user_config.is_raw_gpr_data)
+            {
+                result << "By default, raw " << enabled_types
+                       << " data is excluded from the output file to prevent bloating the output. To include this data, rerun the rgd CLI tool with the '--"
+                       << kStrRawGprData << "' option." << std::endl;
+            }
+        }
+        else
+        {
+            result << kStrNotAvailable << " (GPR data not found for the captured crash.)" << std::endl;
+            RgdUtils::PrintMessage((enabled_types + "GPR collection was enabled but no GPR data was found.").c_str(), RgdMessageType::kError, true);
+            assert(false);
+        }
     }
     else if (!has_any_gpr_data && kmd_crash_data_ != nullptr)
     {

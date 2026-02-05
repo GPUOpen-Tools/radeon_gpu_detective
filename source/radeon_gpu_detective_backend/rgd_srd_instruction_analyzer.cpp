@@ -10,6 +10,7 @@
 // Local.
 #include "rgd_srd_disassembler_factory.h"
 #include "rgd_utils.h"
+#include "rgd_code_object_database.h"
 
 // Standard.
 #include <regex>
@@ -252,9 +253,9 @@ nlohmann::json SrdInstructionAnalyzer::GetSrdAnalysisForOffendingInstructionJson
     return result;
 }
 
-bool SrdInstructionAnalyzer::DetectSgprUsage(const std::string& instruction_text, std::vector<SgprGroup>& sgpr_groups) const
+SrdAnalysisUnavailableReason SrdInstructionAnalyzer::DetectSgprUsage(const std::string& instruction_text, std::vector<SgprGroup>& sgpr_groups) const
 {
-    bool result = false;
+    SrdAnalysisUnavailableReason result = SrdAnalysisUnavailableReason::kUnknown;
     sgpr_groups.clear();
 
     // ISA decoder must be available for SGPR analysis.
@@ -266,17 +267,17 @@ bool SrdInstructionAnalyzer::DetectSgprUsage(const std::string& instruction_text
     else
     {
         // ISA decoder not initialized - error already logged during initialization.
-        result = false;
+        result = SrdAnalysisUnavailableReason::kIsaDecoderUnavailable;
     }
 
     return result;
 }
 
-bool SrdInstructionAnalyzer::DetectSgprGroupsUsingIsaDecoder(const std::string& instruction_text,
+SrdAnalysisUnavailableReason SrdInstructionAnalyzer::DetectSgprGroupsUsingIsaDecoder(const std::string& instruction_text,
                                                             const std::string& machine_code,
                                                             std::vector<SgprGroup>& sgpr_groups) const
 {
-    bool result = false;
+    SrdAnalysisUnavailableReason result = SrdAnalysisUnavailableReason::kUnknown;
     
     if (isa_decoder_ != nullptr)
     {
@@ -308,32 +309,39 @@ bool SrdInstructionAnalyzer::DetectSgprGroupsUsingIsaDecoder(const std::string& 
                             // Extract SGPR ranges from the actual instruction text and match with ISA info.
                             if (ExtractSgprGroupsFromInstructionAndIsa(instruction_text, instruction_info, sgpr_groups))
                             {
-                                result = true;
+                                result = SrdAnalysisUnavailableReason::kAvailable;
                                 break;
                             }
                         }
-                        if (result)
+                        if (result == SrdAnalysisUnavailableReason::kAvailable)
                         {
                             // Only one instruction is being decoded at per call to DetectSgprGroupsUsingIsaDecoder().
                             break;
                         }
                     }
+
                     // Offending instruction may not always have the SGPR usage.
-                    // So when no SGPRs were found, result remains false but this is not an error.
+                    // So when no SGPRs were found, result is lack of SRD assocaited with the instruction.
+                    if(result == SrdAnalysisUnavailableReason::kUnknown)
+                    {
+                        // No SRD used by offending instruction.
+                        result = SrdAnalysisUnavailableReason::kInstructionDoesNotUseResourceDescriptor;
+                    }
+
                 }
                 else
                 {
                     // ISA decoder failed to decode this instruction - this is an error.
                     std::string error_msg = "ISA decoder failed to decode instruction stream. Error: " + err_message;
                     RgdUtils::PrintMessage(error_msg.c_str(), RgdMessageType::kError, true);
-                    result = false;
+                    result = SrdAnalysisUnavailableReason::kIsaDecodingFailed;
                 }
             }
             else
             {
                 // Failed to parse machine code - Should not reach here.
                 assert(false);
-                result = false;
+                result = SrdAnalysisUnavailableReason::kIsaDecodingFailed;
                 RgdUtils::PrintMessage("failed to parse instruction machine code.", RgdMessageType::kError, true);
             }
         }
@@ -341,9 +349,13 @@ bool SrdInstructionAnalyzer::DetectSgprGroupsUsingIsaDecoder(const std::string& 
         {
             // No machine code found - - Should not reach here.
             assert(false);
-            result = false;
+            result = SrdAnalysisUnavailableReason::kIsaDecodingFailed;
             RgdUtils::PrintMessage("failed to find instruction machine code.", RgdMessageType::kError, true);
         }
+    }
+    else
+    {
+        result = SrdAnalysisUnavailableReason::kIsaDecoderUnavailable;
     }
 
     return result;

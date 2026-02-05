@@ -11,6 +11,7 @@
 // Local.
 #include "rgd_data_types.h"
 #include "rgd_srd_disassembler.h"
+#include "rgd_code_object_database.h"
 
 // ISA Decoder.
 #include "amdisa/isa_decoder.h"
@@ -92,7 +93,7 @@ public:
     /// @param [in] instruction_text The disassembled instruction text.
     /// @param [out] sgpr_groups Vector of detected SGPR groups.
     /// @return True if SGPR usage is detected in the instruction.
-    bool DetectSgprUsage(const std::string& instruction_text, std::vector<SgprGroup>& sgpr_groups) const;
+    SrdAnalysisUnavailableReason DetectSgprUsage(const std::string& instruction_text, std::vector<SgprGroup>& sgpr_groups) const;
 
 private:
 
@@ -120,7 +121,7 @@ private:
     /// @param [in] machine_code Optional machine code for the instruction.
     /// @param [out] sgpr_groups Vector of detected SGPR groups.
     /// @return True if SGPR groups are detected in the instruction.
-    bool DetectSgprGroupsUsingIsaDecoder(const std::string& instruction_text,
+    SrdAnalysisUnavailableReason DetectSgprGroupsUsingIsaDecoder(const std::string& instruction_text,
                                          const std::string& machine_code,
                                          std::vector<SgprGroup>& sgpr_groups) const;
 

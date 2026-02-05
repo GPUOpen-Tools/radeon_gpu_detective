@@ -1,3 +1,15 @@
+Radeon™ GPU Detective v1.6.2 Release Notes
+==========================================
+This is a patch release that addresses the following improvements:
+
+Highlights
+==========
+* Crash analysis is now supported for ROG Xbox Ally X.
+
+Bug Fixes
+=========
+* Fixed an issue where certain key events were not appearing in the resource timeline.
+
 Radeon™ GPU Detective v1.6.1 Release Notes
 ==========================================
 This is a patch release that addresses the following improvements:
@@ -32,6 +44,7 @@ Known Issues
 * Attempting to capture GPU crash dumps on a system with a Ryzen CPU that includes integrated graphics (with no connected discrete Radeon™ GPU) may result in a BSOD.
 * In certain hang cases (where the GPU crash was not caused by a page fault), Hardware Crash Analysis may not detect the offending shader. However, as long as your crash case is supported by RGD, you can count on the "standard" (RGD v1.3) information to be included, whether or not the Hardware Crash Analysis feature was applicable to your crash case.
 * When Hardware Crash Analysis feature is enabled on APUs with AMD Radeon™ 840M graphics or AMD Radeon™ 860M graphics, certain game or graphics app launch may result in a black screen.
+* The latest ROG Xbox Ally X drivers do not support wave SGPRs/VGPRs collection. The feature may be added in a future driver release.
 
 System Requirements
 ===================
