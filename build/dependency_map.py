@@ -22,7 +22,7 @@ git_mapping = {
     github_root + "nlohmann/json"                          : ["../external/third_party/json",      "v3.9.1"],
     github_root + "jarro2783/cxxopts"                      : ["../external/third_party/cxxopts",   "v3.0.0"],
     github_root + "GPUOpen-Drivers/libamdrdf"              : ["../external/rdf",                   "v1.4.2"],
-    github_root + "GPUOpen-Tools/radeon_memory_visualizer" : ["../external/rmv",                   "bdc5116f61212713e067b395236fa527422c956d"],
+    github_root + "GPUOpen-Tools/radeon_memory_visualizer" : ["../external/rmv",                   "7b3e1fba5825260a5088d10a8cb1a853b8183ae5"],
     github_root + "GPUOpen-Tools/system_info_utils"        : ["../external/system_info_utils",     "928d2a2ff77fef14c155a2730bf796ab3ca85cfe"],
     github_root + "GPUOpen-Tools/isa_spec_manager"         : ["../external/isa_spec_manager",      "v1.1.0"],
     github_root + "GPUOpen-Tools/comgr_utils"              : ["../external/comgr_utils",           "2b35675e46f64806c410bd55f1125958fe5d92e0"],
