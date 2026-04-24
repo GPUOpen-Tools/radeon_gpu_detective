@@ -35,17 +35,7 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y \
             cmake \
-            build-essential \
-            chrpath \
-            patchelf \
-            libxcb-xinerama0 \
-            libxcb-cursor-dev \
-            mesa-common-dev \
-            libglu1-mesa-dev \
-            libgl1-mesa-dev \
-            libx11-xcb-dev \
-            libxkbcommon-x11-dev \
-            libwayland-dev
+            build-essential
 
       - name: Pre-build (Windows)
         if: runner.os == 'Windows'
