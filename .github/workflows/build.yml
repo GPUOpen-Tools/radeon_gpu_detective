@@ -71,17 +71,6 @@ jobs:
         run: |
           cmake --build build/linux/make/release --target radeon_gpu_detective_cli rgd_test --parallel $(nproc)
 
-      - name: Build Debug tests (Windows)
-        if: runner.os == 'Windows'
-        shell: cmd
-        run: |
-          cmake --build build\win\vs2022 --config Debug --target rgd_test --parallel %NUMBER_OF_PROCESSORS%
-
-      - name: Build Debug tests (Ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          cmake --build build/linux/make/debug --target rgd_test --parallel $(nproc)
-
       - name: Run tests (Windows)
         if: runner.os == 'Windows'
         run: build\win\vs2022\release\rgd_test.exe --rgd samples\sample_crash_dump.rgd
