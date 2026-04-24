@@ -1,4 +1,6 @@
 # radeon_gpu_detective
+[![Build Status](https://github.com/GPUOpen-Tools/radeon_gpu_detective/actions/workflows/build.yml/badge.svg)](https://github.com/GPUOpen-Tools/radeon_gpu_detective/actions/workflows/build.yml)
+
 RGD is a tool for post-mortem analysis of GPU crashes. 
 
 The tool performs offline processing of AMD GPU crash dump files and generates crash analysis reports in text and JSON formats.
