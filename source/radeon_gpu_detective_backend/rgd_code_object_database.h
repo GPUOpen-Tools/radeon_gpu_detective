@@ -10,6 +10,7 @@
 
 #include <set>
 #include <unordered_map>
+#include <vector>
 
 #include <CodeObjectDisassemblerApi.h>
 #include <source/comgr_utils.h>
@@ -235,9 +236,9 @@ public:
     /// @return true if debug info extraction was successful, false otherwise
     bool ExtractDebugInfo(const Config& user_config, const std::vector<std::string>& debug_info_dirs);
 
-    // vector to hold the RGD crashing code object entries.
-    std::vector<RgdCodeObjectEntry>              entries_                             = {};
-    std::map<Rgd128bitHash, RgdCodeObjectEntry*> internal_pipeline_hash_to_entry_map_ = {};
+    // Vector to hold the RGD crashing code object entries.
+    std::vector<RgdCodeObjectEntry>           entries_                             = {};
+    std::map<Rgd128bitHash, size_t>           internal_pipeline_hash_to_entry_map_ = {};
     bool                                         is_code_obj_db_built_                = false;
 };
 

@@ -691,7 +691,7 @@ bool RgdCodeObjectDatabase::AddCodeObject(uint64_t               pc_instruction_
             entry.code_object_payload_    = std::move(code_object_payload);
             entry.code_obj_size_in_bytes_ = entry.code_object_payload_.size();
             assert(entry.code_obj_size_in_bytes_ != 0);
-            internal_pipeline_hash_to_entry_map_[internal_pipeline_hash] = &entry;
+            internal_pipeline_hash_to_entry_map_[internal_pipeline_hash] = entries_.size() - 1;
 
             assert(entry.pc_offset_to_hung_wave_count_map_.find(pc_instruction_offset) == entry.pc_offset_to_hung_wave_count_map_.end());
             entry.pc_offset_to_hung_wave_count_map_[pc_instruction_offset] = pc_wave_count;
@@ -700,7 +700,7 @@ bool RgdCodeObjectDatabase::AddCodeObject(uint64_t               pc_instruction_
         else
         {
             // Code object entry already exists. Update the additional pc instruction offset information.
-            RgdCodeObjectEntry& entry = *internal_pipeline_hash_to_entry_map_[internal_pipeline_hash];
+            RgdCodeObjectEntry& entry = entries_[internal_pipeline_hash_to_entry_map_[internal_pipeline_hash]];
 
             if (entry.pc_offset_to_hung_wave_count_map_.find(pc_instruction_offset) != entry.pc_offset_to_hung_wave_count_map_.end())
             {

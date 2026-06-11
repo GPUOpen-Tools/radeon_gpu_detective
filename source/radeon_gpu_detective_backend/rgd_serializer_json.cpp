@@ -7,6 +7,7 @@
 
 // Local.
 #include "rgd_serializer_json.h"
+#include "rgd_parsing_utils.h"
 #include "rgd_utils.h"
 #include "rgd_version_info.h"
 
@@ -26,6 +27,14 @@ static const char* kJsonElemPdbFiles                  = "pdb_files";
 static const char* kJsonElemCrashAnalysisFile         = "crash_analysis_file";
 static const char* kJsonElemPdbSearchPathsFromRgdFile = "pdb_search_paths_from_rgd_file";
 static const char* kJsonElemPdbSearchPathsFromRgdCli  = "pdb_search_paths_from_rgd_cli";
+
+// Execution marker raw event JSON keys.
+static const char* kJsonElemMarkerType       = "marker_type";
+static const char* kJsonElemMarkerName       = "marker_name";
+static const char* kJsonElemPixEventId       = "pix_event_id";
+static const char* kJsonElemPixMetadata      = "pix_metadata";
+static const char* kJsonElemPixIsSetMarker   = "pix_is_set_marker";
+static const char* kJsonElemPixColorArgb     = "pix_color_argb";
 
 // GPR data JSON keys - optimized string constants.
 static const char* kJsonElemGprTimestamp       = "timestamp";
@@ -285,7 +294,6 @@ void RgdSerializerJson::SetSystemInfoData(const Config& user_config, const syste
 void RgdSerializerJson::SetUmdCrashData(const CrashData& umd_crash_data)
 {
     const char* kJsonElemExecMarkers = "execution_markers";
-    static const char* kJsonElemMarkerType = "marker_type";
     static const char* kJsonElemMarkerValue = "marker_value";
 
     // Serialize the execution markers.
@@ -300,12 +308,56 @@ void RgdSerializerJson::SetUmdCrashData(const CrashData& umd_crash_data)
         case uint8_t(UmdEventId::RgdEventExecutionMarkerBegin):
         {
             const CrashAnalysisExecutionMarkerBegin& exec_marker_begin_event = static_cast<const CrashAnalysisExecutionMarkerBegin&>(rgd_event);
-            json_[kJsonElemExecMarkers].push_back({
+
+            const uint32_t marker_src_bits =
+                (exec_marker_begin_event.markerValue & kMarkerSrcMask) >> (kUint32Bits - kMarkerSrcBitLen);
+            const bool is_pix_marker = (marker_src_bits ==
+                static_cast<uint32_t>(CrashAnalysisExecutionMarkerSource::Pix));
+
+            nlohmann::json begin_entry = {
                 {kJsonElemTimestampElement, umd_crash_data.events[i].event_time},
                 {kJsonElemMarkerType, "begin"},
                 {kJsonElemCmdBufferIdElement, exec_marker_begin_event.cmdBufferId},
                 {kJsonElemMarkerValue, exec_marker_begin_event.markerValue & kMarkerValueMask},
-                });
+            };
+
+            if (is_pix_marker)
+            {
+                if (exec_marker_begin_event.markerStringSize >= sizeof(RgdPixMarkerData))
+                {
+                    RgdPixMarkerData header{};
+                    std::memcpy(&header, exec_marker_begin_event.markerName, sizeof(RgdPixMarkerData));
+
+                    std::stringstream event_id_ss;
+                    event_id_ss << "0x" << std::hex << std::uppercase << header.eventId;
+                    begin_entry[kJsonElemPixEventId] = event_id_ss.str();
+
+                    std::stringstream metadata_ss;
+                    metadata_ss << "0x" << std::hex << std::uppercase << header.metadata;
+                    begin_entry[kJsonElemPixMetadata]    = metadata_ss.str();
+                    begin_entry[kJsonElemPixIsSetMarker] = header.isSetMarker;
+                }
+
+                uint32_t    decoded_color = 0;
+                std::string decoded_name  = RgdParsingUtils::DecodePIXMarkerBlob(exec_marker_begin_event.markerName,
+                                                                                  exec_marker_begin_event.markerStringSize,
+                                                                                  decoded_color);
+                begin_entry[kJsonElemMarkerName] = decoded_name;
+                if (decoded_color != 0)
+                {
+                    std::stringstream color_ss;
+                    color_ss << "0x" << std::hex << std::uppercase << decoded_color;
+                    begin_entry[kJsonElemPixColorArgb] = color_ss.str();
+                }
+            }
+            else
+            {
+                begin_entry[kJsonElemMarkerName] = (exec_marker_begin_event.markerStringSize > 0)
+                    ? std::string(reinterpret_cast<const char*>(exec_marker_begin_event.markerName), exec_marker_begin_event.markerStringSize)
+                    : std::string(kStrNotAvailable);
+            }
+
+            json_[kJsonElemExecMarkers].push_back(begin_entry);
         }
         break;
         case uint8_t(UmdEventId::RgdEventExecutionMarkerEnd):
@@ -675,19 +727,46 @@ void RgdSerializerJson::SetGprData(const CrashData& kmd_crash_data)
     }
 }
 
+void RgdSerializerJson::SetIsPageFault(bool is_page_fault)
+{
+    is_page_fault_ = is_page_fault;
+}
+
+void RgdSerializerJson::SetPageFaultVaZero()
+{
+    // Emit a page_fault_summary entry for page faults with VA=0.
+    // No resources are associated with virtual address 0.
+    nlohmann::json page_fault_entry;
+    page_fault_entry["offending_va"] = 0;
+    page_fault_entry["resource_information"] = nlohmann::json::array();
+    json_[kJsonElemPageFaultSummary].push_back(page_fault_entry);
+}
+
 bool RgdSerializerJson::SaveToFile(const Config& user_config) const
 {
+    // Create a mutable copy for final adjustments before saving.
+    nlohmann::json json_to_save = json_;
+
+    // Always include is_page_fault indicator.
+    json_to_save["is_page_fault"] = is_page_fault_;
+
+    // Ensure page_fault_summary always exists as an array.
+    if (!json_to_save.contains(kJsonElemPageFaultSummary))
+    {
+        json_to_save[kJsonElemPageFaultSummary] = nlohmann::json::array();
+    }
+
     std::string contents;
 
     if (user_config.is_compact_json || user_config.is_raw_gpr_data)
     {
         // Use compact format when requested or raw VGPR and SGPR data is present.
-        contents = json_.dump();
+        contents = json_to_save.dump();
     }
     else
     {
         const int kIndent = 4;
-        contents = json_.dump(kIndent);
+        contents = json_to_save.dump(kIndent);
     }
     return RgdUtils::WriteTextFile(user_config.output_file_json, contents);
 }

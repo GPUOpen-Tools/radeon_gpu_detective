@@ -8,14 +8,19 @@
 // Local.
 #include "rgd_marker_data_serializer.h"
 #include "rgd_exec_marker_tree_serializer.h"
+#include "rgd_parsing_utils.h"
 #include "rgd_utils.h"
 
 // C++.
 #include <string>
 #include <sstream>
 #include <cassert>
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <regex>
+#include <vector>
+
 
 // *** INTERNALLY-LINKED AUXILIARY FUNCTIONS - BEGIN ***
 
@@ -475,9 +480,28 @@ bool ExecMarkerDataSerializer::BuildCmdBufferExecutionMarkerTreeNodes(const Conf
                             const CrashAnalysisExecutionMarkerBegin& marker_begin =
                                 static_cast<const CrashAnalysisExecutionMarkerBegin&>(*curr_marker_event.rgd_event);
                             uint32_t marker_value = marker_begin.markerValue;
-                            std::string marker_name = (marker_begin.markerStringSize > 0)
+
+                            // Decide whether the marker payload is a plain ASCII string (sources 0..3, 15)
+                            // or a D3D12 PIX runtime payload (source == Pix). D3D12 PIX markers carry an RgdPixMarkerData
+                            // header followed by an opaque blob that must be decoded.
+                            const uint32_t marker_source_bits =
+                                (marker_value & kMarkerSrcMask) >> (kUint32Bits - kMarkerSrcBitLen);
+                            const bool is_pix_marker = (marker_source_bits ==
+                                static_cast<uint32_t>(CrashAnalysisExecutionMarkerSource::Pix));
+
+                            std::string marker_name;
+
+                            if (is_pix_marker)
+                            {
+                                marker_name = RgdParsingUtils::DecodePIXMarkerBlob(marker_begin.markerName,
+                                                                                    marker_begin.markerStringSize);
+                            }
+                            else
+                            {
+                                marker_name = (marker_begin.markerStringSize > 0)
                                     ? std::string(reinterpret_cast<const char*>(marker_begin.markerName), marker_begin.markerStringSize)
                                     : std::string(kStrNotAvailable);
+                            }
 
                             RgdCrashingShaderInfo crashing_shader_info;
                             if (is_shader_in_flight)
@@ -498,6 +522,7 @@ bool ExecMarkerDataSerializer::BuildCmdBufferExecutionMarkerTreeNodes(const Conf
                                         in_flight_shader_api_pso_hashes_to_shader_info_[pipeline_api_pso_hash].source_entry_point_names;
                                 }
                             }
+
                             command_buffer_exec_tree_[debug_nop_event.cmdBufferId]->PushMarkerBegin(
                                 curr_marker_event.event_time, marker_value, pipeline_api_pso_hash, is_shader_in_flight, marker_name, crashing_shader_info);
                         }

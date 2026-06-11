@@ -33,8 +33,8 @@ static constexpr size_t kMaxInitialSourceLines    = 10;
 static constexpr size_t kSourceContextLines       = 34;
 
 // SRD analysis unavailability reason strings.
-static constexpr const char* kSrdUnavailableReasonInstructionDoesNotUseDescriptor = "the page fault suspect instruction does not use a resource descriptor";
-static constexpr const char* kSrdUnavailableReasonDataNotAvailable = "SGPR collection was enabled but data could not be collected for the in-flight waves";
+static constexpr const char* kSrdUnavailableReasonInstructionDoesNotUseDescriptor = "SGPR collection was enabled - resource descriptor not used by the page fault suspect instruction";
+static constexpr const char* kSrdUnavailableReasonDataNotAvailable = "SGPR collection was enabled - data not available for the in-flight waves";
 static constexpr const char* kSrdUnavailableReasonIsaDecoderUnavailable = "ISA Decoder not initialized.";
 static constexpr const char* kSrdUnavailableReasonIsaDecodingFailed     = "ISA Decoding failed to parse instruction.";
 static constexpr const char* kSrdUnavailableReasonUnknown = "Unknown";

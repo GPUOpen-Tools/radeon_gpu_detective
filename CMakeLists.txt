@@ -5,7 +5,8 @@
 #  @brief  Top level CMakeLists file.
 #=============================================================================
 
-cmake_minimum_required (VERSION 3.10)
+cmake_minimum_required (VERSION 3.13)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -14,7 +15,7 @@ project (RGD)
 # Define version information
 set(RGD_MAJOR_VERSION 1)
 set(RGD_MINOR_VERSION 6)
-set(RGD_PATCH_NUMBER 2)
+set(RGD_PATCH_NUMBER 3)
 if (NOT RGD_BUILD_NUMBER)
     set(RGD_BUILD_NUMBER 0)
 endif ()
@@ -29,35 +30,31 @@ configure_file("${CMAKE_SOURCE_DIR}/source/radeon_gpu_detective_backend/rgd_vers
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/external/rmv/cmake")
 include(dev_tools)
 
-add_definitions(-DCOMGR_DYNAMIC_LINKING)
-
 # Include directories for all projects.
 set(AMDGPU_DIS_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/external/amd_gpu_dis/Include/)
-set(AMD_COMGR_INCLUDE_DIR ${PROJECT_SOURCE_DIR}/external/comgr/include/)
 include_directories("${PROJECT_SOURCE_DIR}/external/")
-include_directories("${PROJECT_SOURCE_DIR}/external/rdf/rdf/inc/")
 include_directories("${PROJECT_SOURCE_DIR}/external/third_party/")
-include_directories("${PROJECT_SOURCE_DIR}/external/comgr/include/")
 include_directories("${PROJECT_SOURCE_DIR}/external/comgr_utils/")
 
-# rgd command line tool.
-add_subdirectory (source/radeon_gpu_detective_cli)
-
-add_subdirectory (source/radeon_gpu_detective_backend)
-
 # RDF.
-add_definitions(-DRDF_CXX_BINDINGS)
-option(RDF_STATIC              "Build RDF as a static library" ON)
-add_subdirectory(external/rdf/imported/zstd)
-add_subdirectory(external/rdf/rdf)
-
-# RMV.
-add_subdirectory(external/rmv/source/parser parser)
-add_subdirectory(external/rmv/source/backend backend)
+set(RDF_STATIC ON)
+set(RDF_ENABLE_CXX_BINDINGS ON)
+add_subdirectory(external/rdf)
 
 # System info.
 set(SYSTEM_INFO_BUILD_RDF_INTERFACES ON)
 add_subdirectory(external/system_info_utils)
+
+# RMV.
+add_subdirectory(external/rmv/source/parser parser)
+add_subdirectory(external/rmv/source/backend backend)
+# FIXME
+# RMV includes RDF and SystemInfo incorrectly and set up their include directories manually.
+# RGD previously used them similarly incorrectly, which made RMV work.
+# We need to tell CMake that these RMV components use RDF and SystemInfo
+# as otherwise SystemInfo will be unable to find RDF's headers when building RMV.
+target_link_libraries(RmvParser PRIVATE rdf)
+target_link_libraries(RmvBackend PRIVATE rdf system_info)
 
 # ISA Spec Manager.
 set(EXCLUDE_ISA_CLI_EXAMPLES_TESTS ON)
@@ -66,35 +63,36 @@ add_subdirectory(external/isa_spec_manager)
 # Test rgd app.
 add_subdirectory(test/source/rgd_test)
 
-# COMGR.
+# COMGR. comgr_utils provides a `comgr` (or `comgr_plugin` in dynamic mode)
+# imported target that wraps the comgr DLL fetched via FetchContent.
+# Enable dynamic loading so the DLL is dlopen'd at runtime (matches prior RGD behavior).
+set(COMGR_UTILS_DYNAMIC_LINKING ON CACHE BOOL "Load comgr at runtime via dlopen/LoadLibrary" FORCE)
 add_subdirectory(external/comgr_utils ComgrUtils)
 
-# Define the location of dependent libraries
+# Microsoft PixEvents decoder (used to decode PIX runtime markers in crash dumps).
+# Windows-only — the upstream PIX header pulls in <Windows.h> types (UINT64, SAL annotations).
+if(WIN32)
+    add_subdirectory(source/radeon_gpu_detective_backend/pix_events_decoder pix_events_decoder)
+endif()
+
+# rgd command line tool.
+add_subdirectory (source/radeon_gpu_detective_backend)
+add_subdirectory (source/radeon_gpu_detective_cli)
+
+# Define the location of dependent libraries.
+# Note: comgr is now provided by the `comgr_plugin` imported target from external/comgr_utils
+# (created by FetchContent inside that subproject). Use $<TARGET_FILE:comgr_plugin> for paths.
 IF(WIN32)
-    set(AMD_COMGR_LIBS_DIR ${PROJECT_SOURCE_DIR}/external/comgr/lib/VS2022/x64)
     set(AMDGPU_DIS_LIBS_DIR ${PROJECT_SOURCE_DIR}/external/amd_gpu_dis/Lib/VS2022/x64)
 ELSEIF(UNIX)
-    set(AMD_COMGR_LIBS_DIR ${PROJECT_SOURCE_DIR}/external/comgr/lib/x64)
     set(AMDGPU_DIS_LIBS_DIR ${PROJECT_SOURCE_DIR}/external/amd_gpu_dis/Lib/Linux/x64)
 ENDIF()
 
-# Locate shared library components referenced by multiple targets
-IF(WIN32)
-    set (AMD_COMGR_LIB_FILENAME amd_comgr_3)
-ELSEIF(UNIX)
-    set (AMD_COMGR_SHARED ${CMAKE_SHARED_LIBRARY_PREFIX}amd_comgr${CMAKE_SHARED_LIBRARY_SUFFIX})
-    set (AMD_COMGR_LIB_FILENAME amd_comgr)
-ENDIF()
-set (AMD_COMGR_SHARED ${CMAKE_SHARED_LIBRARY_PREFIX}${AMD_COMGR_LIB_FILENAME}${CMAKE_SHARED_LIBRARY_SUFFIX})	
 set (AMDGPU_DIS_SHARED ${CMAKE_SHARED_LIBRARY_PREFIX}amdgpu_dis${CMAKE_SHARED_LIBRARY_SUFFIX})
 
-find_library(AMD_COMGR_LIB ${AMD_COMGR_LIB_FILENAME} PATHS ${AMD_COMGR_LIBS_DIR} NO_DEFAULT_PATH)
-find_file(AMD_COMGR_SHAREDLIB ${AMD_COMGR_SHARED} PATHS ${AMD_COMGR_LIBS_DIR} NO_DEFAULT_PATH)
 find_library(AMDGPU_DIS_LIB amdgpu_dis PATHS ${AMDGPU_DIS_LIBS_DIR} NO_DEFAULT_PATH)
 find_file(AMDGPU_DIS_SHAREDLIB ${AMDGPU_DIS_SHARED} PATHS ${AMDGPU_DIS_LIBS_DIR} NO_DEFAULT_PATH)
 
-message ("Comgr found  at ${AMD_COMGR_LIB}")
-message ("Comgr shared at ${AMD_COMGR_SHAREDLIB}")
 message ("AMDGPU_Dis found  at ${AMDGPU_DIS_LIB}")
 message ("AMDGPU_Dis shared at ${AMDGPU_DIS_SHAREDLIB}")
 message ("AMDGPU_Dis include at ${AMDGPU_DIS_INCLUDE_DIR}")
@@ -144,7 +142,7 @@ IF(WIN32)
     install(FILES external/amd_gpu_dis/Lib/VS2022/x64/amdgpu_dis.dll
         DESTINATION ./${CPACK_RGD_CLI_FULL_PACKAGE_NAME}
         COMPONENT rgd_cli_component)
-    install(FILES external/comgr/lib/VS2022/x64/amd_comgr_3.dll
+    install(FILES $<TARGET_FILE:comgr_plugin>
         DESTINATION ./${CPACK_RGD_CLI_FULL_PACKAGE_NAME}
         COMPONENT rgd_cli_component)
     install(FILES external/third_party/DXC/bin/x64/dxc.exe
@@ -154,7 +152,7 @@ ELSEIF(UNIX)
     install(FILES ${AMDGPU_DIS_SHAREDLIB}
         DESTINATION ./${CPACK_RGD_CLI_FULL_PACKAGE_NAME}/lib/
         COMPONENT rgd_cli_component)
-    install(FILES ${AMD_COMGR_SHAREDLIB}
+    install(FILES $<TARGET_FILE:comgr_plugin>
         DESTINATION ./${CPACK_RGD_CLI_FULL_PACKAGE_NAME}/lib/
         COMPONENT rgd_cli_component)
     install(FILES external/third_party/DXC/bin/dxc
@@ -180,7 +178,7 @@ install(TARGETS radeon_gpu_detective_cli
         DESTINATION ./${CPACK_ARCHIVE_RGD_TEST_COMPONENT_FILE_NAME}/${CPACK_RGD_CLI_FULL_PACKAGE_NAME}/
         COMPONENT rgd_test_component)
 
-install(FILES test/RGD_TEST_README.md
+install(FILES test/README.md
         DESTINATION ./${CPACK_RGD_TEST_FULL_PACKAGE_NAME}/
         COMPONENT rgd_test_component)
 
@@ -192,13 +190,20 @@ install(FILES test/scripts/TestRunner.py
         DESTINATION ./${CPACK_RGD_TEST_FULL_PACKAGE_NAME}/
         COMPONENT rgd_test_component)
 
-# Define the location of dependent libraries for RGD TEST.
+install(FILES test/scripts/JsonTests.py
+        DESTINATION ./${CPACK_RGD_TEST_FULL_PACKAGE_NAME}/
+        COMPONENT rgd_test_component)
+
+# Define the location of dependent libraries and exe files for RGD TEST.
 IF(WIN32)
     install(FILES external/amd_gpu_dis/Lib/VS2022/x64/amdgpu_dis.dll
         DESTINATION ./${CPACK_ARCHIVE_RGD_TEST_COMPONENT_FILE_NAME}/${CPACK_RGD_CLI_FULL_PACKAGE_NAME}/
         COMPONENT rgd_test_component)
-    install(FILES external/comgr/lib/VS2022/x64/amd_comgr_3.dll
+    install(FILES $<TARGET_FILE:comgr_plugin>
         DESTINATION ./${CPACK_ARCHIVE_RGD_TEST_COMPONENT_FILE_NAME}/${CPACK_RGD_CLI_FULL_PACKAGE_NAME}/
+        COMPONENT rgd_test_component)
+    install(FILES external/third_party/DXC/bin/x64/dxc.exe
+        DESTINATION ./${CPACK_ARCHIVE_RGD_TEST_COMPONENT_FILE_NAME}/${CPACK_RGD_CLI_FULL_PACKAGE_NAME}/utils/dx12/dxc
         COMPONENT rgd_test_component)
 ENDIF()
 

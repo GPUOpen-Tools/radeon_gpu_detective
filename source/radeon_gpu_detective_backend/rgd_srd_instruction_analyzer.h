@@ -12,6 +12,7 @@
 #include "rgd_data_types.h"
 #include "rgd_srd_disassembler.h"
 #include "rgd_code_object_database.h"
+#include "rgd_srd_type_classifier.h"
 
 // ISA Decoder.
 #include "amdisa/isa_decoder.h"

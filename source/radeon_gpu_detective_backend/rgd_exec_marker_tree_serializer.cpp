@@ -408,8 +408,11 @@ void ExecMarkerTreeSerializer::TreeNodeToJson(const MarkerNode& node, nlohmann::
 
         // Flag for the application marker. Enhanced crash info - shader in flight correlation info is not printed for application markers.
         // As pipeline bind events are correctly correlated with the driver markers only.
+        // D3D12 PIX markers (source == Pix) are treated identically to Application markers from RGD's perspective.
+        const uint32_t marker_src_bits = (node.marker_value & kMarkerSrcMask) >> (kUint32Bits - kMarkerSrcBitLen);
         bool is_application_marker =
-            ((node.marker_value & kMarkerSrcMask) >> (kUint32Bits - kMarkerSrcBitLen)) == (uint32_t)CrashAnalysisExecutionMarkerSource::Application;
+            marker_src_bits == (uint32_t)CrashAnalysisExecutionMarkerSource::Application ||
+            marker_src_bits == (uint32_t)CrashAnalysisExecutionMarkerSource::Pix;
 
         uint8_t*                   marker_info             = const_cast<uint8_t*>(node.marker_info);
         ExecutionMarkerInfoHeader* exec_marker_info_header = reinterpret_cast<ExecutionMarkerInfoHeader*>(marker_info);
@@ -484,6 +487,9 @@ void ExecMarkerTreeSerializer::TreeNodeToJson(const MarkerNode& node, nlohmann::
                 break;
             case (uint32_t)CrashAnalysisExecutionMarkerSource::Hardware:
                 marker_node_json[kJsonElemMarkerSrc] = kMarkerSrcHw;
+                break;
+            case (uint32_t)CrashAnalysisExecutionMarkerSource::Pix:
+                marker_node_json[kJsonElemMarkerSrc] = kMarkerSrcApplication;
                 break;
             case (uint32_t)CrashAnalysisExecutionMarkerSource::System:
                 break;
@@ -680,8 +686,11 @@ std::string ExecMarkerTreeSerializer::TreeNodeToString(std::vector<bool> is_last
 
     // Flag for the application marker. Enhanced crash info - shader in flight correlation info is not printed for application markers.
     // As pipeline bind events are correctly correlated with the driver markers only.
+    // D3D12 PIX markers (source == Pix) are treated identically to Application markers from RGD's perspective.
+    const uint32_t marker_src_bits = (item.marker_value & kMarkerSrcMask) >> (kUint32Bits - kMarkerSrcBitLen);
     bool is_application_marker =
-        ((item.marker_value & kMarkerSrcMask) >> (kUint32Bits - kMarkerSrcBitLen)) == (uint32_t)CrashAnalysisExecutionMarkerSource::Application;
+        marker_src_bits == (uint32_t)CrashAnalysisExecutionMarkerSource::Application ||
+        marker_src_bits == (uint32_t)CrashAnalysisExecutionMarkerSource::Pix;
 
     MarkerExecutionStatus status = MarkerExecutionStatus::kInProgress;
 
@@ -788,6 +797,9 @@ std::string ExecMarkerTreeSerializer::TreeNodeToString(std::vector<bool> is_last
                 break;
             case (uint32_t)CrashAnalysisExecutionMarkerSource::Hardware:
                 txt << " [" << kMarkerSrcHw << "]";
+                break;
+            case (uint32_t)CrashAnalysisExecutionMarkerSource::Pix:
+                txt << " [" << kMarkerSrcApplication << "]";
                 break;
             case (uint32_t)CrashAnalysisExecutionMarkerSource::System:
                 break;

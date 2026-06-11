@@ -15,7 +15,7 @@ the crash analysis reports that the tool generates:
 
 System requirements
 -------------------
-* Operating system: Windows® 10 or 11.
+* Operating system: Windows® 11.
 * GPU: RDNA™2 (RX 6000 series), RDNA™3 (RX 7000 series) or RDNA™ 4 (RX 9000 series) card.
 * Driver: Radeon Adrenalin™ driver with Crash Analysis support.
 
@@ -507,6 +507,7 @@ How to use DXC debug information to improve RGD output?
 
    - All the PDB search paths that were listed in RDP during the crash dump capture will be recorded in the AMD GPU crash dump (.rgd) file and automatically used by the RGD command line when parsing that file.
    - If the relevant path is only known later during analysis, you can use the --pdb-path command line option to ensure that the rgd command line tool locates and uses the files that include the debug information.
+   - If the shader debug info files are stored in a deep hierarchy of subdirectories, use the --pdb-subdir command line option to enable recursive search through all subdirectories of each PDB search path.
 
 **Configuration in RDP**
 
@@ -810,8 +811,8 @@ Let's elaborate:
    but a different other type of problem, e.g. a shader hang due to timeout (too long execution) or an infinite loop.
 
 
-Scope of v1.6
--------------
+Scope of v1.6.3
+---------------
 RGD is designed to capture **GPU crashes** on Windows. If a GPU fault (such as memory page fault or infinite loop in a shader) causes the GPU driver to not respond to the OS for some pre-determined 
 time period (the default on Windows is 2 seconds), the OS will detect that and attempt to restart or remove the device. This mechanism is also known as "TDR" (Timeout Detection and Recovery) and is what we 
 consider to be a **GPU crash** for the scope of this tool.
@@ -863,14 +864,16 @@ Usage tips for RGD
 
 * In Vulkan, the old device extension VK_EXT_debug_marker is also supported by RGD, but it is now deprecated in favor of the VK_EXT_debug_utils instance extension.
 
-* **Try Crash Analysis with Driver Experiments**: If you suspect that certain optimizations or features enabled by the driver might be causing the crash, 
+* **Try Crash Analysis with Driver Experiments**: If you suspect that certain optimizations or features enabled by the driver might be causing the crash,
   you can try to disable them using Driver Experiments. This can help you narrow down the search for the cause of the crash.
+
+* **D3D12 PIX markers** (``PIXBeginEvent``, ``PIXEndEvent``) are natively supported in RGD v1.6.3 when using the May Agility SDK preview release.
+  Alternatively, you can use the AGS library markers directly (``agsDriverExtensionsDX12_PushMarker``, ``agsDriverExtensionsDX12_PopMarker``) or use the replacement D3D12 PIX markers header provided with this package, which uses them automatically.
 
 
 Known issues and workarounds
 ----------------------------
 
-* **PIX markers** (``PIXBeginEvent``, ``PIXEndEvent``) are not captured by RGD. To see the hierarchy of markers around render passes, you need to use the markers from AGS library, either directly (``agsDriverExtensionsDX12_PushMarker``, ``agsDriverExtensionsDX12_PopMarker``) or using the replacement header for PIX markers provided with this package that uses them automatically. Otherwise, you would see only a flat list of draw calls. This is the same requirement as for RGP. For more information, see the RGP documentation ("User Debug Markers" chapter).
 * Only push-pop scopes are captured. Point markers in AGS library (``agsDriverExtensionsDX12_SetMarker``) are ignored by RGD, and so are point markers in Vulkan (``vkCmdInsertDebugUtilsLabelEXT``).
 * In the current version of RGD, **markers that cross command list boundaries** (begin on one command list, end on another one) are not handled properly and may not show up in the RGD output.
 * A system reboot is recommended after the **driver installation**. An invalid crash dump file may get generated when RGD workflow is executed after a fresh driver installation without a system reboot.

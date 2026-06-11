@@ -14,7 +14,7 @@
 #include "json/single_include/nlohmann/json.hpp"
 
 // System Info.
-#include "system_info_utils/source/system_info_reader.h"
+#include "system_info_reader.h"
 
 // Local.
 #include "rgd_data_types.h"
@@ -25,7 +25,7 @@
 // JSON Schema version
 #define STRINGIFY_JSON_SCHEMA_VERSION(major, minor) STRINGIFY_MACRO(major) "." STRINGIFY_MACRO(minor)
 #define RGD_JSON_SCHEMA_VERSION_MAJOR 1
-#define RGD_JSON_SCHEMA_VERSION_MINOR 3
+#define RGD_JSON_SCHEMA_VERSION_MINOR 4
 #define RGD_JSON_SCHEMA_VERSION STRINGIFY_JSON_SCHEMA_VERSION(RGD_JSON_SCHEMA_VERSION_MAJOR, RGD_JSON_SCHEMA_VERSION_MINOR)
 
 // *** INTERNALLY-LINKED AUXILIARY CONSTANTS - BEGIN ***
@@ -77,6 +77,12 @@ public:
     // Set raw GPR (VGPR and SGPR) data.
     void SetGprData(const CrashData& kmd_crash_data);
 
+    // Set whether the crash is a page fault or a hang.
+    void SetIsPageFault(bool is_page_fault);
+
+    // Set page fault summary entry for VA=0 (no associated resources).
+    void SetPageFaultVaZero();
+
     // Saves the JSON contents to a file.
     bool SaveToFile(const Config& user_config) const;
 
@@ -86,6 +92,7 @@ public:
 private:
     nlohmann::json json_;
     bool has_gpr_data_ = false;
+    bool is_page_fault_ = false;
 };
 
 #endif // RADEON_GPU_DETECTIVE_SOURCE_RGD_SERIALIZER_JSON_H_

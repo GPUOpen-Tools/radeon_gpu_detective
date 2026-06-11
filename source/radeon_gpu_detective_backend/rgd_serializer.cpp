@@ -12,6 +12,7 @@
 
 // C++.
 #include <cassert>
+#include <cstring>
 #include <iomanip>
 #include <string>
 #include <sstream>
@@ -383,10 +384,42 @@ std::string RgdSerializer::EventExecMarkerBeginToString(const CrashAnalysisExecu
     ret << offset_tabs << "Marker source: " << RgdParsingUtils::ExtractMarkerSource(exec_marker_begin_event.markerValue) << std::endl;
     ret << offset_tabs << "Command buffer ID: 0x" << std::hex << exec_marker_begin_event.cmdBufferId << std::dec << std::endl;
     ret << offset_tabs << "Marker value: 0x" << std::hex << exec_marker_begin_event.markerValue << std::dec << std::endl;
-    std::string marker_name = (exec_marker_begin_event.markerStringSize > 0)
-        ? std::string(reinterpret_cast<const char*>(exec_marker_begin_event.markerName), exec_marker_begin_event.markerStringSize)
-        : std::string(kStrNotAvailable);
-    ret << offset_tabs << "Marker string name: " << marker_name << std::endl;
+
+    // For D3D12 PIX markers, markerName is not ASCII — it is RgdPixMarkerData + opaque PIX blob.
+    // Avoid printing the binary blob as text; surface the header fields instead.
+    const uint32_t marker_source_bits =
+        (exec_marker_begin_event.markerValue & kMarkerSrcMask) >> (kUint32Bits - kMarkerSrcBitLen);
+    const bool is_pix_marker = (marker_source_bits ==
+        static_cast<uint32_t>(CrashAnalysisExecutionMarkerSource::Pix));
+
+    if (is_pix_marker)
+    {
+        if (exec_marker_begin_event.markerStringSize >= sizeof(RgdPixMarkerData))
+        {
+            RgdPixMarkerData header{};
+            std::memcpy(&header, exec_marker_begin_event.markerName, sizeof(RgdPixMarkerData));
+            ret << offset_tabs << "PIX event ID: 0x" << std::hex << header.eventId << std::dec << std::endl;
+            ret << offset_tabs << "PIX metadata: 0x" << std::hex << header.metadata << std::dec << std::endl;
+            ret << offset_tabs << "PIX is set marker: " << (header.isSetMarker ? "true" : "false") << std::endl;
+        }
+
+        uint32_t    pix_color    = 0;
+        std::string decoded_name = RgdParsingUtils::DecodePIXMarkerBlob(exec_marker_begin_event.markerName,
+                                                                         exec_marker_begin_event.markerStringSize,
+                                                                         pix_color);
+        std::stringstream color_ss;
+        color_ss << "0x" << std::hex << std::uppercase << pix_color;
+
+        ret << offset_tabs << "Marker string name: " << decoded_name << std::endl;
+        ret << offset_tabs << "PIX color (ARGB): " << (pix_color != 0 ? color_ss.str() : "N/A") << std::endl;
+    }
+    else
+    {
+        std::string marker_name = (exec_marker_begin_event.markerStringSize > 0)
+            ? std::string(reinterpret_cast<const char*>(exec_marker_begin_event.markerName), exec_marker_begin_event.markerStringSize)
+            : std::string(kStrNotAvailable);
+        ret << offset_tabs << "Marker string name: " << marker_name << std::endl;
+    }
     ret << offset_tabs << "Marker string length: " << exec_marker_begin_event.markerStringSize;
     return ret.str();
 }

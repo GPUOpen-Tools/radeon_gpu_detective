@@ -187,6 +187,9 @@ private:
 
     // Should print verbose error messages and debug information to the console?
     bool is_verbose_ = false;
+
+    // Should search subdirectories of each PDB path for shader debug info files?
+    bool is_pdb_subdir_ = false;
     
     // Static regex patterns for parsing.
     static const std::regex kLineRefPattern;

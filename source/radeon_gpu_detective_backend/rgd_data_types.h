@@ -18,7 +18,7 @@
 #include "json/single_include/nlohmann/json.hpp"
 
 // RDF.
-#include "rdf/rdf/inc/amdrdf.h"
+#include "amdrdf.h"
 
 // Dev driver.
 #pragma warning(push)
@@ -29,7 +29,7 @@
 // System info.
 #pragma warning(push)
 #pragma warning(disable : 4201)  // nonstandard extension used: nameless struct/union.
-#include "system_info_utils/source/system_info_reader.h"
+#include "system_info_reader.h"
 #pragma warning(pop)
 
 // Local.
@@ -178,6 +178,9 @@ struct Config
 
     // Full directory paths to the pdb files.
     std::vector<std::string> pdb_dir;
+
+    // Search subdirectories of each PDB path for shader debug info files.
+    bool is_pdb_subdir = false;
 
     // True for higher level of details for console output.
     bool is_verbose = false;

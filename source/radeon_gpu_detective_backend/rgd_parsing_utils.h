@@ -16,7 +16,7 @@
 #include "json/single_include/nlohmann/json.hpp"
 
 // RDF.
-#include "rdf/rdf/inc/amdrdf.h"
+#include "amdrdf.h"
 
 // Local.
 #include "rgd_data_types.h"
@@ -44,6 +44,15 @@ public:
     // Extracts the name of the marker's source which is packed into the upper 4 bits of the marker value.
     static std::string ExtractMarkerSource(uint32_t marker_value);
 
+    // Decodes a D3D12 PIX marker payload (RgdPixMarkerData header + opaque blob) into a human-readable name.
+    // Sets out_color to the 0xAARRGGBB value from the decoded blob (0 if unavailable).
+    // Returns the decoded name, or a placeholder string on failure.
+    // On non-Windows builds the decoder is not available; always returns the placeholder.
+    static std::string DecodePIXMarkerBlob(const uint8_t* marker_name_buffer, uint16_t marker_string_size, uint32_t& out_color);
+
+    // Overload for callers that do not need the decoded color.
+    static std::string DecodePIXMarkerBlob(const uint8_t* marker_name_buffer, uint16_t marker_string_size);
+
     // Parses a TraceProcessInfo chunk.
     static bool ParseTraceProcessInfoChunk(rdf::ChunkFile& chunk_file, const char* chunk_identifier, TraceProcessInfo& process_info);
 
@@ -63,6 +72,12 @@ public:
 
     // Parse a 'PsoCorrelation' chunk from the given chunk file.
     static bool PsoCorrelationChunk(rdf::ChunkFile& chunk_file, const char* chunk_identifier, std::vector<RgdPsoCorrelation>& pso_correlations);
+
+    // Parse an 'ApiInfo' chunk from the given chunk file.
+    static void ParseApiInfoChunk(rdf::ChunkFile& chunk_file, TraceChunkApiInfo& api_info, bool is_verbose);
+
+    // Parse the crash dump file and populate the RgdCrashDumpContents structure.
+    static bool ParseCrashDump(const Config& user_config, RgdCrashDumpContents& contents);
 
     // Get the crash type - page fault or hang.
     static bool GetIsPageFault();

@@ -12,7 +12,7 @@ external/system_info_utils
 external/rdf
 external/third_party
 external/amd_gpu_dis
-external/comgr
+external/comgr_utils
 external/isa_spec_manager
 external/isa_spec_xml
 Buildinfo.properties

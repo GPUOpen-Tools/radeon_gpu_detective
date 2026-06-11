@@ -1,6 +1,17 @@
+Radeon™ GPU Detective v1.6.3 Release Notes
+==========================================
+
+Highlights
+==========
+* Support for PIX native user markers in DirectX® 12 crash dumps (requires the May Agility SDK preview release).
+* Support for recursive subdirectory search for PDBs (use the --pdb-subdir command line option).
+
+Bug Fixes
+=========
+* Bug and stability fixes.
+
 Radeon™ GPU Detective v1.6.2 Release Notes
 ==========================================
-This is a patch release that addresses the following improvements:
 
 Highlights
 ==========
@@ -12,14 +23,12 @@ Bug Fixes
 
 Radeon™ GPU Detective v1.6.1 Release Notes
 ==========================================
-This is a patch release that addresses the following improvements:
 
 Highlights
 ==========
 * Support individual options for wave SGPRs and VGPRs collection through RDP UI.
 * Improved reporting when SRD Analysis is not available.
 * Hardware Crash Analysis - improved disassembler support for in-flight shaders.
-* SRD Analysis - minor formatting changes to display some values as decimal rather than hex.
 
 Radeon™ GPU Detective v1.6 Release Notes
 ========================================
@@ -44,11 +53,11 @@ Known Issues
 * Attempting to capture GPU crash dumps on a system with a Ryzen CPU that includes integrated graphics (with no connected discrete Radeon™ GPU) may result in a BSOD.
 * In certain hang cases (where the GPU crash was not caused by a page fault), Hardware Crash Analysis may not detect the offending shader. However, as long as your crash case is supported by RGD, you can count on the "standard" (RGD v1.3) information to be included, whether or not the Hardware Crash Analysis feature was applicable to your crash case.
 * When Hardware Crash Analysis feature is enabled on APUs with AMD Radeon™ 840M graphics or AMD Radeon™ 860M graphics, certain game or graphics app launch may result in a black screen.
-* The latest ROG Xbox Ally X drivers do not support wave SGPRs/VGPRs collection. The feature may be added in a future driver release.
+* Vulkan applications running under Radeon Developer Panel with Crash Analysis enabled may not disconnect properly. When a Vulkan app is closed without triggering a TDR, the Vulkan driver can keep the process alive. RDP never receives a client disconnect, leaving a zombie process visible in Task Manager even after closing RDP.
 
 System Requirements
 ===================
-* Operating system: Windows 10 or 11.
+* Operating system: Windows 11.
 
 * Latest Adrenalin Software driver. A system reboot is recommended after the driver installation. 
 

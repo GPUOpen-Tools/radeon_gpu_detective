@@ -175,7 +175,8 @@ enum class CrashAnalysisExecutionMarkerSource : uint8_t
     APILayer     = 1, // (i.e. DX12 or Vulkan)
     PAL          = 2,
     Hardware     = 3,
-    // 4-14 are reserved
+    Pix          = 4,  // PIX marker events
+    // 5-14 are reserved
     System       = 15,
 };
 
@@ -249,6 +250,18 @@ struct CrashAnalysisExecutionMarkerInfo : RgdEvent
     /// by a data structure that ExecutionMarkerInfoHeader.infoType dictates. All the structure are tightly packed
     /// (no paddings).
     uint8_t markerInfo[MarkerInfoBufferSize];
+};
+
+/// PIX marker payload header.
+///
+/// When CrashAnalysisExecutionMarkerBegin/End is emitted with source bits == CrashAnalysisExecutionMarkerSource::Pix,
+/// markerName[0..markerStringSize-1] starts with this header followed by the opaque PIX runtime blob that must be
+/// decoded by Microsoft's PixEventDecoder.
+struct RgdPixMarkerData
+{
+    uint64_t eventId;     ///< Event ID used by the PIX runtime to correlate the marker.
+    uint32_t metadata;    ///< PIX runtime marker format / version metadata.
+    bool     isSetMarker; ///< false = Begin event (paired with End); true = SetMarker (point marker - back-to-back Begin/End pair).
 };
 
 /// Vm Pagefault Event

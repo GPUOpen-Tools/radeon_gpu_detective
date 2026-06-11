@@ -6,6 +6,7 @@
 //============================================================================================
 
 #include "rgd_srd_instruction_analyzer.h"
+#include "rgd_srd_type_classifier.h"
 
 // Local.
 #include "rgd_srd_disassembler_factory.h"
@@ -108,11 +109,13 @@ std::string SrdInstructionAnalyzer::GetIsaSpecPath(ecitrace::GpuSeries gpu_serie
             break;
     }
     
-    // Construct path using the same pattern as DXC executable.
+    // Construct path relative to the module (DLL/EXE) directory.
     // ISA spec files are copied to utils/isa_spec/ during build.
     if (!spec_filename.empty())
     {
-        result = ".\\utils\\isa_spec\\" + spec_filename;
+        std::string module_dir = RgdUtils::GetModuleDirectoryPath();
+        const std::filesystem::path base_dir = module_dir.empty() ? std::filesystem::path(".") : std::filesystem::path(module_dir);
+        result = (base_dir / "utils" / "isa_spec" / spec_filename).string();
     }
     
     return result;
@@ -493,39 +496,38 @@ bool SrdInstructionAnalyzer::ExtractSgprGroupsFromInstructionAndIsa(const std::s
     return result;
 }
 
-SrdType SrdInstructionAnalyzer::DetermineSrdTypeForGroup(const amdisa::InstructionInfo& instruction_info, 
-                                                        size_t operand_index,
-                                                        size_t group_index, 
-                                                        uint32_t start_reg, 
-                                                        uint32_t end_reg,
-                                                        bool has_rsrc_field,
-                                                        bool has_samp_field) const
+SrdType ClassifySrdTypeFromSubgroups(const std::vector<amdisa::FunctionalSubgroups>& subgroups,
+                                     const std::string&                              encoding_name,
+                                     bool                                            has_rsrc_field,
+                                     bool                                            has_samp_field,
+                                     size_t                                          operand_index,
+                                     uint32_t                                        group_size)
 {
-    const uint32_t group_size = end_reg - start_reg + 1;
-    
     // SRD size constants.
-    constexpr uint32_t kImageSrdSizeDwords = 8;
+    constexpr uint32_t kImageSrdSizeDwords   = 8;
     constexpr uint32_t kSamplerSrdSizeDwords = 4;
-    constexpr uint32_t kBufferSrdSizeDwords = 4;
 
-    // Analyze instruction using ISA decoder metadata.
-    SrdType srd_type = SrdType::kBuffer;  // Default fallback.
+    // Default fallback type.
+    SrdType srd_type = SrdType::kBuffer;
+
+    // Helper lambda to check if a specific subgroup is present in the list.
+    auto has_subgroup = [&subgroups](amdisa::FunctionalSubgroups sg) {
+        return std::find(subgroups.begin(), subgroups.end(), sg) != subgroups.end();
+    };
 
     // Check functional group and subgroup information.
-    const auto subgroup = instruction_info.functional_group_subgroup_info.IsaFunctionalSubgroup;
-    
-    if (subgroup == amdisa::kFunctionalSubgroup::kFunctionalSubgroupBvh)
+    if (has_subgroup(amdisa::FunctionalSubgroups::kFunctionalSubgroupBvh))
     {
         srd_type = SrdType::kBvh;
     }
-    else if (subgroup == amdisa::kFunctionalSubgroup::kFunctionalSubgroupBuffer ||
-             subgroup == amdisa::kFunctionalSubgroup::kFunctionalSubgroupLoad ||
-             subgroup == amdisa::kFunctionalSubgroup::kFunctionalSubgroupStore)
+    else if (has_subgroup(amdisa::FunctionalSubgroups::kFunctionalSubgroupBuffer) ||
+             has_subgroup(amdisa::FunctionalSubgroups::kFunctionalSubgroupLoad)   ||
+             has_subgroup(amdisa::FunctionalSubgroups::kFunctionalSubgroupStore))
     {
         srd_type = SrdType::kBuffer;
     }
-    else if (subgroup == amdisa::kFunctionalSubgroup::kFunctionalSubgroupTexture ||
-             subgroup == amdisa::kFunctionalSubgroup::kFunctionalSubgroupSample)
+    else if (has_subgroup(amdisa::FunctionalSubgroups::kFunctionalSubgroupTexture) ||
+             has_subgroup(amdisa::FunctionalSubgroups::kFunctionalSubgroupSample))
     {
         // For texture/sample instructions, distinguish between RSRC and SAMP based on the encoding fields.
         if (has_rsrc_field && has_samp_field)
@@ -560,12 +562,12 @@ SrdType SrdInstructionAnalyzer::DetermineSrdTypeForGroup(const amdisa::Instructi
             }
         }
     }
-    else if(subgroup == amdisa::kFunctionalSubgroup::kFunctionalSubgroupAtomic)
+    else if (has_subgroup(amdisa::FunctionalSubgroups::kFunctionalSubgroupAtomic))
     {
-        // Atomic instructions can use buffer or Image SRDs.
-        if(instruction_info.encoding_name == "ENC_MIMG" ||
-           instruction_info.encoding_name == "MIMG_NSA1" ||
-           instruction_info.encoding_name == "ENC_VIMAGE")
+        // Atomic instructions can use buffer or Image SRDs depending on the encoding.
+        if (encoding_name == "ENC_MIMG" ||
+            encoding_name == "MIMG_NSA1" ||
+            encoding_name == "ENC_VIMAGE")
         {
             srd_type = SrdType::kImage;
         }
@@ -576,6 +578,25 @@ SrdType SrdInstructionAnalyzer::DetermineSrdTypeForGroup(const amdisa::Instructi
     }
 
     return srd_type;
+}
+
+SrdType SrdInstructionAnalyzer::DetermineSrdTypeForGroup(const amdisa::InstructionInfo& instruction_info, 
+                                                        size_t operand_index,
+                                                        size_t group_index, 
+                                                        uint32_t start_reg, 
+                                                        uint32_t end_reg,
+                                                        bool has_rsrc_field,
+                                                        bool has_samp_field) const
+{
+    (void)group_index;
+    const uint32_t group_size = end_reg - start_reg + 1;
+    return ClassifySrdTypeFromSubgroups(
+        instruction_info.functional_group_subgroup_info.isa_functional_subgroups,
+        instruction_info.encoding_name,
+        has_rsrc_field,
+        has_samp_field,
+        operand_index,
+        group_size);
 }
 
 std::vector<uint32_t> SrdInstructionAnalyzer::ExtractSrdData(const std::vector<uint32_t>& sgpr_indices, uint32_t shader_id) const

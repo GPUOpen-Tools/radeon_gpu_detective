@@ -12,7 +12,7 @@
 #include <unordered_map>
 
 // System Info.
-#include "system_info_utils/source/system_info_reader.h"
+#include "system_info_reader.h"
 #include "dev_driver/include/rgdevents.h"
 
 // Local.
