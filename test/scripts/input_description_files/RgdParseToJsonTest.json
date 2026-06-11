@@ -1,0 +1,9 @@
+{
+  "test_name": "ParseCrashDumpToJson",
+  "description": "Parse sample_crash_dump.rgd to JSON with marker options and validate output format.",
+  "input_file": "sample_crash_dump.rgd",
+  "output_folder": "JsonTestOutputs",
+  "cli_options": [],
+  "output_file": "sample_crash_dump.json",
+  "validate_json": true
+}

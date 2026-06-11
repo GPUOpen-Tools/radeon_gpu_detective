@@ -7,6 +7,18 @@
 #include "rgd_utils.h"
 #include "rgd_data_types.h"
 
+// Platform-specific includes for GetModuleDirectoryPath.
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#include <unistd.h>
+#include <limits.h>
+#endif
+
 // C++.
 #include <cassert>
 #include <ctime>
@@ -371,4 +383,85 @@ bool RgdUtils::SaveCodeObjectBinaries(const std::string& file_name, const std::m
     }
 
     return ret;
+}
+
+std::string RgdUtils::GetModuleDirectoryPath()
+{
+    std::string result;
+
+#ifdef _WIN32
+    // Get the path to the current module (DLL or EXE).
+    HMODULE module_handle = nullptr;
+
+    // Get the handle to the module containing this function.
+    // Using GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS to get the module that contains this code.
+    // Use wide APIs to properly handle Unicode characters in paths.
+    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           reinterpret_cast<LPCWSTR>(&RgdUtils::GetModuleDirectoryPath),
+                           &module_handle))
+    {
+        wchar_t module_path[MAX_PATH] = {0};
+        DWORD path_length = GetModuleFileNameW(module_handle, module_path, MAX_PATH);
+        if (path_length > 0 && path_length < MAX_PATH)
+        {
+            // Extract directory path by removing the filename.
+            wchar_t* last_separator = wcsrchr(module_path, L'\\');
+            if (last_separator != nullptr)
+            {
+                *last_separator = L'\0';
+            }
+
+            // Convert wide string to UTF-8. Pass the wide-character length explicitly (excluding the
+            // null terminator) so the result is sized exactly to the converted bytes without writing
+            // a null terminator past the end of the std::string buffer.
+            const int wide_length = static_cast<int>(wcslen(module_path));
+            int utf8_size = WideCharToMultiByte(CP_UTF8, 0, module_path, wide_length, nullptr, 0, nullptr, nullptr);
+            if (utf8_size > 0)
+            {
+                result.resize(utf8_size);
+                WideCharToMultiByte(CP_UTF8, 0, module_path, wide_length, &result[0], utf8_size, nullptr, nullptr);
+            }
+        }
+    }
+#else
+    // Linux: Use dladdr to get the path to the shared library containing this function.
+    Dl_info dl_info;
+    if (dladdr(reinterpret_cast<void*>(&RgdUtils::GetModuleDirectoryPath), &dl_info) != 0)
+    {
+        if (dl_info.dli_fname != nullptr)
+        {
+            result = dl_info.dli_fname;
+
+            // Extract directory path by removing the filename.
+            size_t last_separator = result.find_last_of('/');
+            if (last_separator != std::string::npos)
+            {
+                result = result.substr(0, last_separator);
+            }
+        }
+    }
+#endif
+
+    // Check for non-ASCII characters in the path and warn if found.
+    // Some dependencies (subprocess, tinyxml) may not properly handle Unicode paths.
+    if (!result.empty() && HasNonAsciiCharacters(result))
+    {
+        PrintMessage(kNonAsciiInstallPathWarning,
+                     RgdMessageType::kWarning,
+                     true);
+    }
+
+    return result;
+}
+
+bool RgdUtils::HasNonAsciiCharacters(const std::string& str)
+{
+    for (char c : str)
+    {
+        if (static_cast<unsigned char>(c) > 127)
+        {
+            return true;
+        }
+    }
+    return false;
 }

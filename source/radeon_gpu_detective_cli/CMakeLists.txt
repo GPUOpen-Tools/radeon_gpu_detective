@@ -19,15 +19,10 @@ include_directories("${PROJECT_SOURCE_DIR}/../radeon_gpu_detective_backend/")
 set(CMAKE_CXX_STANDARD 17)
 
 add_definitions(-D_USE_REAL_VA)
-# RDF.
-add_definitions(-DRDF_CXX_BINDINGS)
-add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 
 IF (WIN32)
-    add_definitions(-DRDF_PLATFORM_WINDOWS)
     add_link_options(/STACK:16777216)
 ELSEIF(UNIX)
-    add_definitions(-DRDF_PLATFORM_UNIX)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,stack-size=16777216")
 ENDIF(WIN32)
 
@@ -59,9 +54,10 @@ if(MSVC)
 endif()
 
 # Setup the post-build script.
-# List of all dynamically loaded libraries that need to be copied into the output
+# List of all dynamically loaded libraries that need to be copied into the output.
+# comgr is provided by the comgr_plugin imported target from comgr_utils' FetchContent.
 set( PLUGINS
-  ${AMD_COMGR_SHAREDLIB}
+  $<TARGET_FILE:comgr_plugin>
   ${AMDGPU_DIS_SHAREDLIB}
 )
 

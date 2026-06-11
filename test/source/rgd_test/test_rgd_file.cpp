@@ -16,12 +16,12 @@
 #include "rgd_utils.h"
 
 // RDF.
-#include "rdf/rdf/inc/amdrdf.h"
+#include "amdrdf.h"
 
 // System info.
 #pragma warning(push)
 #pragma warning(disable : 4201)  // nonstandard extension used: nameless struct/union.
-#include "system_info_utils/source/system_info_reader.h"
+#include "system_info_reader.h"
 #pragma warning(pop)
 
 TestRgdFile::TestRgdFile(const std::string& path) : file_path_(path) {}

@@ -13,7 +13,7 @@
 #include <string>
 
 // System Info.
-#include "system_info_utils/source/system_info_reader.h"
+#include "system_info_reader.h"
 
 // Dev driver.
 #include "dev_driver/include/rgdevents.h"
@@ -79,6 +79,19 @@ public:
 
     // Returns the API string.
     static std::string GetApiString(TraceApiType api_type);
+
+    // Returns the directory path containing the current module (DLL or EXE).
+    // This is useful for locating resource files relative to the module location.
+    static std::string GetModuleDirectoryPath();
+
+    // Checks if a string contains non-ASCII characters (code points > 127).
+    // Returns true if non-ASCII characters are found, false otherwise.
+    static bool HasNonAsciiCharacters(const std::string& str);
+
+    // Warning/error messages for non-ASCII path issues.
+    static constexpr const char* kNonAsciiInstallPathWarning = "Non-ASCII characters detected in installation path. Some features (shader disassembly) may not work correctly.";
+    static constexpr const char* kNonAsciiInputFileWarning   = "Input file path contains non-ASCII characters. Some features may not work correctly.";
+    static constexpr const char* kNonAsciiInputFileError     = "ERROR: input file path contains non-ASCII characters which are not supported: ";
 
     // Returns the hang type string.
     static std::string GetHangTypeString(HangType hang_type);

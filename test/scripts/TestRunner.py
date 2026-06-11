@@ -11,12 +11,14 @@ import os
 import shutil
 import glob
 import platform
+import copy
 from pathlib import Path
 from datetime import datetime
 from datetime import timedelta
 import time
 import ctypes
 import ctypes.wintypes as wintypes
+from JsonTests import RGDJsonTestSuite
 
 script_folder = os.path.dirname(os.path.abspath(__file__))
 
@@ -72,6 +74,7 @@ STR_SCRIPT_OPT_TEST_DESC_FILE        = '--test'
 STR_SCRIPT_OPT_TEST_API              = '--api'
 STR_SCRIPT_OPT_VERBOSE               = '--verbose'
 STR_SCRIPT_OPT_MODERN_OUTPUT         = '--modern-output'
+STR_SCRIPT_OPT__JSON_TEST            = '--json-test'
 
 # Default values
 STR_DEFAULT_TEST_DESC_FILE = os.path.join('input_description_files', 'RgdDriverSanity.json')
@@ -148,6 +151,7 @@ class Logger:
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.DEBUG)
         self.log_file = ""
+        self.json_test_log_file = ""
         # Console handler
         self.console_handler = logging.StreamHandler()
         self.console_handler.setLevel(logging.WARNING)
@@ -195,6 +199,16 @@ class Logger:
         file_formatter = logging.Formatter('%(levelname)+8s: %(message)s')
         file_handler.setFormatter(file_formatter)
         self.logger.addHandler(file_handler)
+    
+    def set_json_test_file_handler(self, log_dir):
+        # Add dedicated file handler for JSON tests
+        if not self.json_test_log_file:  # Only create if not already created
+            self.json_test_log_file = os.path.join(log_dir, f"ParseToJson_Log_{time_stamp}.txt")
+            json_file_handler = logging.FileHandler(self.json_test_log_file)
+            json_file_handler.setLevel(logging.DEBUG)
+            json_formatter = logging.Formatter('%(levelname)+8s: %(message)s')
+            json_file_handler.setFormatter(json_formatter)
+            self.logger.addHandler(json_file_handler)
 
     def set_console_verbosity(self, is_verbose: 'bool'):
         if is_verbose:
@@ -214,12 +228,15 @@ class LegacyLogger:
         self.capture_logger = logging.getLogger('capture_logger')
         self.backend_logger = logging.getLogger('backend_logger')
         self.summary_logger = logging.getLogger('summary_logger')
+        self.json_test_logger = logging.getLogger('json_test_logger')
         self.capture_logger.setLevel(logging.INFO)
         self.backend_logger.setLevel(logging.INFO)
         self.summary_logger.setLevel(logging.INFO)
+        self.json_test_logger.setLevel(logging.INFO)
         self.capture_test_log_file = ""
         self.backend_test_log_file = ""
         self.summary_log_file = ""
+        self.json_test_log_file = ""
         # Console handler
         self.console_handler = logging.StreamHandler()
         self.console_handler.setLevel(logging.INFO)
@@ -237,6 +254,9 @@ class LegacyLogger:
     
     def summary_info(self, message):
         self.summary_logger.info(message)
+    
+    def json_test_info(self, message):
+        self.json_test_logger.info(message)
 
     def set_dir_extended_log(self, log_dir):
         self.dir_extended_log = log_dir
@@ -247,9 +267,11 @@ class LegacyLogger:
         self.capture_test_log_file = os.path.join(log_dir, f"CaptureTest_output_{time_stamp}.txt")
         self.backend_test_log_file = os.path.join(log_dir, f"BackendTest_output_{time_stamp}.txt")
         self.summary_log_file = os.path.join(log_dir, f"TestSummary_{time_stamp}.txt")
+        self.json_test_log_file = os.path.join(log_dir, f"ParseToJson_Log_{time_stamp}.txt")
         capture_file_handler = logging.FileHandler(self.capture_test_log_file)
         backend_file_handler = logging.FileHandler(self.backend_test_log_file)
         summary_file_handler = logging.FileHandler(self.summary_log_file)
+        json_test_file_handler = logging.FileHandler(self.json_test_log_file)
 
         file_formatter_capture = logging.Formatter('%(message)s')
         capture_file_handler.setFormatter(file_formatter_capture)
@@ -257,16 +279,21 @@ class LegacyLogger:
         file_formatter_backend = logging.Formatter('%(message)s')
         backend_file_handler.setFormatter(file_formatter_backend)
 
+        file_formatter_json_test = logging.Formatter('%(message)s')
+        json_test_file_handler.setFormatter(file_formatter_json_test)
+
         # write console content to summary file output
         summary_file_handler.setFormatter(self.console_formatter)
         self.capture_logger.addHandler(capture_file_handler)
         self.backend_logger.addHandler(backend_file_handler)
         self.summary_logger.addHandler(summary_file_handler)
+        self.json_test_logger.addHandler(json_test_file_handler)
     
     def disable_legacy_logger(self):
         self.capture_logger.setLevel(logging.CRITICAL + 1)
         self.backend_logger.setLevel(logging.CRITICAL + 1)
         self.summary_logger.setLevel(logging.CRITICAL + 1)
+        self.json_test_logger.setLevel(logging.CRITICAL + 1)
         self.console_handler.setLevel(logging.CRITICAL + 1)
 
     def get_failure_logger_for_test_case(self, case_no):
@@ -287,9 +314,13 @@ class LegacyLogger:
         failure_logger_test_case = self.get_failure_logger_for_test_case(case_no)
         failure_logger_test_case.info(message)
 
+
+# ParseToJsonLogger is now imported from rgd_json_test module
+
 # Logger
 logger = Logger()
 legacy_logger = LegacyLogger()
+# parse_to_json_logger is now created within RGDJsonTestSuite
 
 # There should be only one radeon_gpu_detective-<version> folder in the testkit, but glob returns a list.
 rgd_cli_folder = glob.glob(os.path.join(script_folder,"radeon_gpu_detective-*"))
@@ -329,6 +360,7 @@ class TestConfig:
         self.retain_output_files = True
         self.crash_generator_exe_path = None
         self.gpu_trasher_path = None
+        self.vk_crasher_path = None
         self.rgd_test_exe_path = None
         self.rgd_cli_exe_path = None
         self.verbose_console_output = False
@@ -393,9 +425,9 @@ class TestConfig:
             vk_crasher_folder = glob.glob(os.path.join(sample_apps_folder[0],"VulkanCrashGenerator"))
             _STR_UNABLE_TO_LOCATE_VKCRASHER_FOLDER_MSG = "Unable to locate the VulkanCrashGenerator folder"
             if len(vk_crasher_folder) == 0:
-                logger.error(f"{_STR_UNABLE_TO_LOCATE_VKCRASHER_FOLDER_MSG} inside {sample_apps_folder[0]}.")
-                legacy_logger.summary_info(f"{_STR_UNABLE_TO_LOCATE_VKCRASHER_FOLDER_MSG} inside {sample_apps_folder[0]}. {_STR_EXITING_SUFFIX}")
-                exit(1)
+                logger.warning(f"{_STR_UNABLE_TO_LOCATE_VKCRASHER_FOLDER_MSG} inside {sample_apps_folder[0]}. VK tests will be skipped.")
+                legacy_logger.summary_info(f"{_STR_UNABLE_TO_LOCATE_VKCRASHER_FOLDER_MSG} inside {sample_apps_folder[0]}. VK tests will be skipped.")
+                self.vk_crasher_path = None
             else:
                 self.vk_crasher_path = vk_crasher_folder[0]
         
@@ -430,6 +462,8 @@ class TestConfig:
         self.set_gpu_trasher_path()
         self.set_vk_crasher_path()
         legacy_logger.set_dir_extended_log(self.test_output_files_dir)
+        
+        # Parse-to-json logger setup is handled in RGDJsonTestSuite
 
 class TestCrashCase:
     def __init__(self, test_api, test_name, case_no, verify_crash_dump=True, verify_rgd_output=False) -> None:
@@ -768,6 +802,9 @@ class TestDriver:
                     continue
                 if api not in SUPPORTED_APIS:
                     logger.critical(f"{api} is not supported. Supported APIs - {get_supported_api_str()}")
+                elif api == "VK" and self.test_config.vk_crasher_path is None:
+                    logger.warning(f"Skipping VK tests - VulkanCrashGenerator is not available.")
+                    legacy_logger.summary_info(f"Skipping VK tests - VulkanCrashGenerator is not available.")
                 else:
                     # For each test described in the test descriptor file, run tests as per the provided test config.
                     for test in test_set:
@@ -896,9 +933,21 @@ class TestDriver:
         capture_file_name = Path(legacy_logger.capture_test_log_file).parent.name + '\\' + Path(legacy_logger.capture_test_log_file).name
         backend_file_name = Path(legacy_logger.backend_test_log_file).parent.name + '\\' + Path(legacy_logger.backend_test_log_file).name
         summary_file_name = Path(legacy_logger.summary_log_file).parent.name + '\\' + Path(legacy_logger.summary_log_file).name
+        
+        # Add JSON test log file path if it exists
+        json_test_log_name = ""
+        if logger.json_test_log_file and os.path.exists(logger.json_test_log_file):
+            json_test_log_path = Path(logger.json_test_log_file)
+            json_test_log_name = json_test_log_path.parent.name + '\\' + json_test_log_path.name
+        elif legacy_logger.json_test_log_file and os.path.exists(legacy_logger.json_test_log_file):
+            json_test_log_path = Path(legacy_logger.json_test_log_file)
+            json_test_log_name = json_test_log_path.parent.name + '\\' + json_test_log_path.name
+        
         legacy_logger.summary_info(f"Capture Test Log    : {capture_file_name}")
         legacy_logger.summary_info(f"RGD Backend Test Log: {backend_file_name}")
         legacy_logger.summary_info(f"Test Run Summary    : {summary_file_name}")
+        if json_test_log_name:
+            legacy_logger.summary_info(f"JSON Test Log       : {json_test_log_name}")
 
         #Retain output files if any of the tests failed
         if self.count_capture_tests_failed != 0 or self.count_backend_tests_failed != 0:
@@ -908,7 +957,6 @@ class TestDriver:
             shutil.rmtree(self.test_config.test_output_files_dir)
 
         return is_test_failed
-
 
 def generate_file_name(folder, base_filename, extension):
     timestamp = get_current_timestamp()
@@ -929,7 +977,7 @@ def move_folder(source_path, destination_path):
     return ret
 
 def main(args):
-
+    
     # Set test configuration
     test_config = TestConfig()
     test_config.set_test_config(args)
@@ -955,7 +1003,61 @@ def main(args):
 
         legacy_logger.summary_info("Open Capture Test Log: " + legacy_logger.capture_test_log_file)
         logger.disable_modern_logger()
-
+    
+    # Handle optional parse-to-json test as a separate test suite
+    if (args.json_test):
+        try:
+            # Set up appropriate logger for JSON tests
+            if(args.modern_output):
+                # Use modern logger and set up JSON test file handler
+                logger.set_json_test_file_handler(test_driver.test_config.out_dir)
+                parse_test_suite = RGDJsonTestSuite(test_config.rgd_cli_exe_path, test_driver.test_config.test_output_files_dir, script_folder, logger, None)
+            else:
+                # Use legacy logger for JSON tests
+                parse_test_suite = RGDJsonTestSuite(test_config.rgd_cli_exe_path, test_driver.test_config.test_output_files_dir, script_folder, None, legacy_logger)
+                
+            parse_test_suite.set_console_verbosity(test_config.verbose_console_output)
+            success = parse_test_suite.run_test_suite()
+            
+            # Generate simple summarization for JSON tests
+            total_json_tests = len(parse_test_suite.test_results)
+            passed_json_tests = sum(1 for result in parse_test_suite.test_results if len(result) >= 2 and result[1])
+            failed_json_tests = total_json_tests - passed_json_tests
+            
+            # Display JSON test summary
+            if(args.modern_output):
+                spaces = logger.get_longest_level_name_length()
+                json_results_summary = "JSON test summary:\n"
+                json_results_summary += (' ' * spaces) + ': '
+                json_results_summary += "==================\n"
+                json_results_summary += (' ' * spaces) + ': '
+                json_results_summary += "PASSED: " + str(passed_json_tests) + "/" + str(total_json_tests) + "\n"
+                json_results_summary += (' ' * spaces) + ': '
+                json_results_summary += "FAILED: " + str(failed_json_tests) + "/" + str(total_json_tests) + "\n"
+                json_results_summary += (' ' * spaces) + ': '
+                json_results_summary += "=================="
+                logger.test_msg("")
+                logger.test_result(json_results_summary)
+                logger.test_msg("")
+            if success:
+                if(args.modern_output):
+                    logger.test_pass("RGD parse-to-json test completed successfully. Continuing with remaining tests...")
+                else:
+                    legacy_logger.summary_info("RGD parse-to-json test completed successfully. Continuing with remaining tests...")
+            else:
+                if(args.modern_output):
+                    logger.test_fail("RGD parse-to-json test failed. Continuing with remaining tests...")
+                else:
+                    legacy_logger.summary_info("RGD parse-to-json test failed. Continuing with remaining tests...")
+        except FileNotFoundError as e:
+            if(args.modern_output):
+                logger.error(f"RGD parse-to-json test failed: {str(e)}")
+                logger.test_fail("RGD parse-to-json test failed: RGD CLI not found")
+            else:
+                legacy_logger.summary_info(f"RGD parse-to-json test failed: {str(e)}")
+                legacy_logger.summary_info("RGD parse-to-json test failed: RGD CLI not found")
+    
+    # Original test framework continues as before
     return test_driver.run_tests()
 
 def PythonVersionValid():
@@ -983,6 +1085,7 @@ if __name__ == "__main__":
     parser.add_argument(STR_SCRIPT_OPT_TEST_API, action='append', help='Currently DX12 and VK are supported')
     parser.add_argument(STR_SCRIPT_OPT_VERBOSE, action='store_true', default=False, help='If specified, console output will include more verbose level information for the tests.')
     parser.add_argument(STR_SCRIPT_OPT_MODERN_OUTPUT, action='store_true', default=False, help='If specified, modernized logging format will be used instead of legacy output format for both file and console outputs.')
+    parser.add_argument(STR_SCRIPT_OPT__JSON_TEST, action='store_true', default=False, help='If specified, run the json test suite on sample crash dump to JSON format and compare with golden reference.')
     
     args = parser.parse_args()
     is_test_failed = main(args)
@@ -992,4 +1095,3 @@ if __name__ == "__main__":
         # Tell the OS that the test failed by setting the exit code to non-zero. 
         sys.exit(1)
 
-    

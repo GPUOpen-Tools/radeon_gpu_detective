@@ -27,7 +27,13 @@ namespace {
     constexpr const char* kDxEntryPointsTag = "!dx.entryPoints";
     constexpr const char* kDxMainFileNameTag = "!dx.source.mainFileName";
     constexpr const char* kDxSourceContentsTag = "!dx.source.contents";
-    constexpr const char* kDxcExecutablePath = ".\\utils\\dx12\\dxc\\dxc.exe";
+    // Helper function to get the full path to the DXC executable.
+    std::string GetDxcExecutablePath()
+    {
+        std::string module_dir = RgdUtils::GetModuleDirectoryPath();
+        const std::filesystem::path base_dir = module_dir.empty() ? std::filesystem::path(".") : std::filesystem::path(module_dir);
+        return (base_dir / "utils" / "dx12" / "dxc" / "dxc.exe").string();
+    }
     
     // DXBC magic number: "DXBC".
     constexpr uint8_t kDxbcMagic[4] = {'D', 'X', 'B', 'C'};
@@ -44,6 +50,7 @@ namespace {
     constexpr const char* kMsgInvalidDxbcMagic = "invalid DXBC magic number in file: ";
     constexpr const char* kMsgFailedToReadChunkOffsets = "failed to read chunk offsets from file: ";
     constexpr const char* kMsgFilesystemError = "filesystem error while searching for ";
+    constexpr const char* kMsgSkippingInaccessibleDir = "skipping inaccessible PDB search path directory (permission denied): ";
     constexpr const char* kMsgFoundPdbFile = "found PDB file: ";
     constexpr const char* kMsgFoundPdbInSubdir = "found PDB file in subdirectory: ";
     constexpr const char* kMsgFoundPdbInIldn = "found PDB filename in ILDN chunk: ";
@@ -100,6 +107,7 @@ bool RgdDxbcParser::Initialize(const Config& user_config, const std::vector<std:
 {
     debug_info_dirs_ = debug_info_dirs;
     is_verbose_      = user_config.is_verbose;
+    is_pdb_subdir_   = user_config.is_pdb_subdir;
     return !debug_info_dirs_.empty();
 }
 
@@ -108,11 +116,14 @@ bool RgdDxbcParser::GetDumpbinOutputForFile(const std::string& input_pdb_file_pa
     bool result = false;
     constexpr const char* kDumpBinCommand = "-dumpbin";
     
+    // Get the full path to dxc.exe.
+    std::string dxc_path = GetDxcExecutablePath();
+    
     // Use dxc.exe to dump binary information.
-    if (!std::filesystem::exists(kDxcExecutablePath))
+    if (!std::filesystem::exists(dxc_path))
     {
         std::stringstream error_msg;
-        error_msg << kMsgDxcNotFound << kDxcExecutablePath;
+        error_msg << kMsgDxcNotFound << dxc_path;
         RgdUtils::PrintMessage(error_msg.str().c_str(), RgdMessageType::kError, true);
     }
     else
@@ -123,7 +134,7 @@ bool RgdDxbcParser::GetDumpbinOutputForFile(const std::string& input_pdb_file_pa
         std::string dxc_error_output;
 
         // Execute the command and capture output.
-        int process_result = RgdProcessUtils::ExecuteAndCapture(kDxcExecutablePath, arguments, dxc_dumpbin_output, dxc_error_output);
+        int process_result = RgdProcessUtils::ExecuteAndCapture(dxc_path, arguments, dxc_dumpbin_output, dxc_error_output);
                 
         result = (process_result == 0 && !dxc_dumpbin_output.empty());
             
@@ -153,29 +164,70 @@ bool RgdDxbcParser::FindDxbcFileByHash(uint64_t hash_hi, uint64_t hash_lo, std::
             // Iterate through all directories.
             for (const auto& debug_info_dir : debug_info_dirs_)
             {
-                if (!debug_info_dir.empty() || std::filesystem::exists(debug_info_dir))
+                if (!debug_info_dir.empty() && std::filesystem::is_directory(debug_info_dir))
                 {
-                    // Iterate through all files in the current debug info directory.
-                    for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(debug_info_dir))
+                    if (is_pdb_subdir_)
                     {
-                        if (entry.is_regular_file())
+                        // Recursively iterate through all files in the current debug info directory and its subdirectories.
+                        // Use skip_permission_denied so inaccessible directories are silently skipped.
+                        std::error_code iter_ec;
+                        auto it = std::filesystem::recursive_directory_iterator(
+                            debug_info_dir, std::filesystem::directory_options::skip_permission_denied, iter_ec);
+                        for (; !iter_ec && it != std::filesystem::recursive_directory_iterator(); it.increment(iter_ec))
                         {
-                            const std::string& current_file = entry.path().string();
-
-                            // Check if this file is a 'DXBC' file and the digest matches our hash.
-                            if (CheckDigestMatch(current_file, hash_hi, hash_lo))
+                            std::error_code entry_ec;
+                            if (it->is_directory(entry_ec) && !entry_ec)
                             {
-                                file_path = current_file;
-                                result    = true;
-                                break;
+                                // skip_permission_denied handles the actual traversal skip silently.
+                                // Probe the directory with a separate error_code to detect permission
+                                // issues and notify the user when they occur.
+                                std::filesystem::directory_iterator dir_probe(it->path(), entry_ec);
+                                if (entry_ec == std::errc::permission_denied)
+                                {
+                                    std::stringstream info_msg;
+                                    info_msg << kMsgSkippingInaccessibleDir << it->path().string();
+                                    RgdUtils::PrintMessage(info_msg.str().c_str(), RgdMessageType::kInfo, is_verbose_);
+                                }
+                            }
+                            else if (!entry_ec && it->is_regular_file())
+                            {
+                                const std::string current_file = it->path().string();
+
+                                // Check if this file is a 'DXBC' file and the digest matches our hash.
+                                if (CheckDigestMatch(current_file, hash_hi, hash_lo))
+                                {
+                                    file_path = current_file;
+                                    result    = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (iter_ec)
+                        {
+                            std::stringstream error_msg;
+                            error_msg << kMsgFilesystemError << "DXBC files: " << iter_ec.message();
+                            RgdUtils::PrintMessage(error_msg.str().c_str(), RgdMessageType::kError, is_verbose_);
+                        }
+                    }
+                    else
+                    {
+                        // Iterate through all files in the current debug info directory.
+                        for (const std::filesystem::directory_entry& entry : std::filesystem::directory_iterator(debug_info_dir))
+                        {
+                            if (entry.is_regular_file())
+                            {
+                                const std::string current_file = entry.path().string();
+
+                                // Check if this file is a 'DXBC' file and the digest matches our hash.
+                                if (CheckDigestMatch(current_file, hash_hi, hash_lo))
+                                {
+                                    file_path = current_file;
+                                    result    = true;
+                                    break;
+                                }
                             }
                         }
                     }
-                }
-                else
-                {
-                    // Should not reach here.
-                    assert(false);
                 }
                 
                 if (result)

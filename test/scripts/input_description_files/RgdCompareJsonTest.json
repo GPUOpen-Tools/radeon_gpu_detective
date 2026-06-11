@@ -1,0 +1,7 @@
+{
+  "test_name": "CompareJsonWithGolden",
+  "description": "Compare generated JSON output with golden reference JSON file.",
+  "generated_json_file": "sample_crash_dump.json",
+  "golden_reference_file": "sample_crash_dump.json",
+  "allowed_differences": ["crash_analysis_file.input_crash_dump_file_name", "crash_analysis_file.rgd_cli_version", "crash_analysis_file.json_schema_version"]
+}

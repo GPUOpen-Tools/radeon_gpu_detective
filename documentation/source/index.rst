@@ -18,8 +18,8 @@ This guide will get you up and running with RGD, a tool for post-mortem GPU cras
 .. note::
    Review these requirements to make sure that this tool is relevant for your use case:
    
-   * RGD v1.6 supports **DirectX12** and **Vulkan**.
-   * **Windows 10 or 11**.
+   * RGD v1.6.3 supports **DirectX12** and **Vulkan**.
+   * **Windows 11**.
    * **RDNA™2** (RX 6000 series), **RDNA™3** (RX 7000 series) or **RDNA™ 4** (RX 9000 series) card.
    * Must **TDR** (we don't catch it if there is no TDR).
    * **Reproducible crashes** (you will have to reproduce the crash to capture a GPU crash dump).
@@ -134,4 +134,4 @@ of Sale.
 
 AMD, the AMD Arrow logo, Radeon, Ryzen, CrossFire, RDNA and combinations thereof are trademarks of Advanced Micro Devices, Inc. Other product names used in
 this publication are for identification purposes only and may be trademarks of their respective companies.
-© 2025 Advanced Micro Devices, Inc. All rights reserved.
+© 2026 Advanced Micro Devices, Inc. All rights reserved.

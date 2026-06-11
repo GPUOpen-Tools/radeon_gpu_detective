@@ -13,6 +13,10 @@
 #include <vector>
 #include <filesystem>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 // Local.
 #include "rgd_asic_info.h"
 #include "rgd_data_types.h"
@@ -29,12 +33,12 @@
 #include "cxxopts.hpp"
 
 // RDF.
-#include "rdf/rdf/inc/amdrdf.h"
+#include "amdrdf.h"
 
 // System info.
 #pragma warning(push)
 #pragma warning(disable : 4201)  // nonstandard extension used: nameless struct/union.
-#include "system_info_utils/source/system_info_reader.h"
+#include "system_info_reader.h"
 #pragma warning(pop)
 
 // *** INTERNALLY-LINKED AUXILIARY FUNCTIONS - BEGIN ***
@@ -49,6 +53,13 @@ static bool IsInputValid(const Config& user_config)
         if (!ret)
         {
             std::cerr << "ERROR: input file does not exist: " << user_config.crash_dump_file << std::endl;
+        }
+        // Check for non-ASCII characters in the input path.
+        // cxxopts and internal dependencies do not properly support Unicode paths.
+        if (ret && RgdUtils::HasNonAsciiCharacters(user_config.crash_dump_file))
+        {
+            std::cerr << RgdUtils::kNonAsciiInputFileError << user_config.crash_dump_file << std::endl;
+            ret = false;
         }
     }
     if (ret && !user_config.output_file_txt.empty())
@@ -78,177 +89,6 @@ static bool IsInputValid(const Config& user_config)
                 std::cerr << "ERROR: PDB directory does not exist: " << dir << std::endl;
                 break;
             }
-        }
-    }
-    return ret;
-}
-
-static void ParseApiInfoChunk(rdf::ChunkFile& chunk_file, TraceChunkApiInfo& api_info, bool is_verbose)
-{
-    const char* kChunkApiInfo = "ApiInfo";
-    const int64_t kChunkCount = chunk_file.GetChunkCount(kChunkApiInfo);
-
-    // Parse if ApiInfo chunk is present in the file. ApiChunk will not be present for the files captured with RDP 2.12 and before.
-    if (kChunkCount > 0)
-    {
-        // Only one ApiInfo chunk is expected so chunk index is set to 0 (first chunk).
-        assert(kChunkCount == 1);
-        const int64_t kChunkApiIdx = 0;
-        uint64_t payload_size = chunk_file.GetChunkDataSize(kChunkApiInfo, kChunkApiIdx);
-        assert(payload_size > 0);
-        if (payload_size > 0)
-        {
-            chunk_file.ReadChunkDataToBuffer(kChunkApiInfo, kChunkApiIdx, (void*)&api_info);
-        }
-        else
-        {
-            RgdUtils::PrintMessage("invalid chunk data size for ApiInfo chunk. Capture API type information is not available.", RgdMessageType::kError, true);
-        }
-    }
-    else
-    {
-        RgdUtils::PrintMessage("ApiInfo chunk not found.", RgdMessageType::kInfo, is_verbose);
-    }
-}
-
-static bool ParseCrashDump(const Config& user_config, RgdCrashDumpContents& contents)
-{
-    std::cout << "Parsing crash dump file..." << std::endl;
-
-    // Read and parse the RDF file.
-    auto         file = rdf::Stream::OpenFile(user_config.crash_dump_file.c_str());
-
-    std::string error_msg;
-    bool ret = false;
-    bool is_system_info_parsed = false;
-    bool is_driveroverrides_parsed = false;
-    bool is_codeobject_db_parsed = false;
-    bool is_codeobject_loader_events_parsed = false;
-    bool is_pso_correlations_parsed         = false;
-    bool is_rgd_extended_info_parsed = false;
-
-    try
-    {
-        rdf::ChunkFile chunk_file = rdf::ChunkFile(file);
-
-        // Parse the UMD and KMD crash data chunk.
-        const char* kChunkCrashData = "DDEvent";
-        ret = RgdParsingUtils::ParseCrashDataChunks(chunk_file, kChunkCrashData, contents.umd_crash_data, contents.kmd_crash_data, error_msg);
-
-        // Parse System Info chunk.
-        is_system_info_parsed = system_info_utils::SystemInfoReader::Parse(chunk_file, contents.system_info);
-        if (is_system_info_parsed)
-        {
-            ecitrace::GpuSeries gpu_series = ecitrace::GpuSeries::kUnknown;
-            for (auto& gpu_info : contents.system_info.gpus)
-            {
-                // Get the asic family and e revision from system info.
-                uint32_t asic_family = gpu_info.asic.id_info.family;
-                uint32_t asic_e_rev  = gpu_info.asic.id_info.e_rev;
-
-                gpu_series = ecitrace::AsicInfo::GetGpuSeries(asic_family, asic_e_rev);
-
-                // Check if supported GPU series found.
-                if (gpu_series != ecitrace::GpuSeries::kUnknown && gpu_series != ecitrace::GpuSeries::kNavi1)
-                {
-                    contents.gpu_series = gpu_series;
-                    break;
-                }
-            }
-        }
-        // If ApiInfo chunk is available, parse chunk.
-        ParseApiInfoChunk(chunk_file, contents.api_info, user_config.is_verbose);
-
-        // Parse TraceProcessInfo chunk.
-        RgdParsingUtils::ParseTraceProcessInfoChunk(chunk_file, kChunkIdTraceProcessInfo, contents.crashing_app_process_info);
-
-        // Parse the 'DriverOverrides' chunk.
-        is_driveroverrides_parsed = RgdParsingUtils::ParseDriverOverridesChunk(chunk_file, kChunkIdDriverOverrides, contents.driver_experiments_json);
-
-        // Parse the 'CodeObject' chunk.
-        is_codeobject_db_parsed = RgdParsingUtils::ParseCodeObjectChunk(chunk_file, kChunkIdCodeObject, contents.code_objects_map);
-
-        // Parse the 'COLoadEvent' chunk.
-        is_codeobject_loader_events_parsed = RgdParsingUtils::ParseCodeObjectLoadEventChunk(chunk_file, kChunkIdCOLoadEvent, contents.code_object_load_events);
-
-        // Parse the 'PsoCorrelation' chunk.
-        is_pso_correlations_parsed = RgdParsingUtils::PsoCorrelationChunk(chunk_file, kChunkIdPsoCorrelation, contents.pso_correlations);
-
-        // Parse the 'RgdExtendedInfo' chunk.
-        is_rgd_extended_info_parsed = RgdParsingUtils::ParseRgdExtendedInfoChunk(chunk_file, kChunkIdRgdExtendedInfo, contents.rgd_extended_info);
-    }
-    catch (const std::exception& e)
-    {
-        std::stringstream error_txt;
-        error_txt << " (" << e.what() << ")";
-        error_msg += error_txt.str();
-    }
-
-    // This will hold the summary contents.
-    std::stringstream txt;
-
-    if (!ret)
-    {
-        std::stringstream err;
-        err << "could not parse input file " << user_config.crash_dump_file << error_msg << std::endl;
-        RgdUtils::PrintMessage(err.str().c_str(), RgdMessageType::kError, user_config.is_verbose);
-    }
-    else
-    {
-        RgdUtils::PrintMessage("crash data parsed successfully.", RgdMessageType::kInfo, user_config.is_verbose);
-
-        // Build the command buffer ID mapping.
-        ret = RgdParsingUtils::BuildCommandBufferMapping(user_config, contents.umd_crash_data, contents.cmd_buffer_mapping);
-        assert(ret);
-        if (ret)
-        {
-            RgdUtils::PrintMessage("command buffer mapping built successfully.", RgdMessageType::kInfo, user_config.is_verbose);
-        }
-        else
-        {
-            RgdUtils::PrintMessage("failed to build command buffer mapping.", RgdMessageType::kError, user_config.is_verbose);
-        }
-
-        assert(is_system_info_parsed);
-        if (is_system_info_parsed && !contents.system_info.cpus.empty())
-        {
-            RgdUtils::PrintMessage("system information parsed successfully.", RgdMessageType::kInfo, user_config.is_verbose);
-        }
-        else
-        {
-            std::cerr << "ERROR: failed to parse system information contents in crash dump file." << std::endl;
-        }
-
-        assert(is_driveroverrides_parsed);
-        if (is_driveroverrides_parsed)
-        {
-            RgdUtils::PrintMessage("driver experiments information parsed successfully.", RgdMessageType::kInfo, user_config.is_verbose);
-        }
-        else
-        {
-            std::cerr << "ERROR: failed to parse DriverOverrides chunk in crash dump file." << std::endl;
-        }
-
-        assert(is_rgd_extended_info_parsed);
-        if (is_rgd_extended_info_parsed)
-        {
-            RgdUtils::PrintMessage("RgdExtendedInfo chunk parsed successfully.", RgdMessageType::kInfo, user_config.is_verbose);
-        }
-        else
-        {
-            std::cerr << "ERROR: failed to parse RgdExtendedInfo chunk in crash dump file." << std::endl;
-        }
-
-        // Done parsing the file here.
-        file.Close();
-
-        if (is_system_info_parsed && ret)
-        {
-            std::cout << "Crash dump file parsed successfully." << std::endl;
-        }
-        else
-        {
-            std::cout << "Failed to parse crash dump file." << std::endl;
         }
     }
     return ret;
@@ -551,7 +391,7 @@ static void SerializeTextOutput(const RgdCrashDumpContents&     contents,
 static bool PerformCrashAnalysis(const Config& user_config)
 {
     RgdCrashDumpContents contents;
-    bool ret = ParseCrashDump(user_config, contents);
+    bool ret = RgdParsingUtils::ParseCrashDump(user_config, contents);
 
     // True if the output we are required to produce is in text format (file or console).
     bool is_text_required = !user_config.output_file_txt.empty() || user_config.output_file_json.empty();
@@ -597,6 +437,10 @@ static bool PerformCrashAnalysis(const Config& user_config)
 
         std::cout << "Analyzing page fault information for the JSON representation..." << std::endl;
 
+        // Set the page fault flag.
+        bool is_page_fault = RgdParsingUtils::GetIsPageFault();
+        serializer_json.SetIsPageFault(is_page_fault);
+
         // Retrieve indices of array contents.kmd_crash_data.events for all KMD DEBUG NOP events which tell us about the offending VAs.
         std::vector<size_t> debug_nop_events;
         std::vector<size_t> page_fault_events;
@@ -625,6 +469,11 @@ static bool PerformCrashAnalysis(const Config& user_config)
             if (curr_event.faultVmAddress != kVaReserved)
             {
                 serializer_json.SetVaResourceData(resource_serializer, user_config, curr_event.faultVmAddress);
+            }
+            else
+            {
+                // Page fault with VA=0: emit a page_fault_summary entry with the offending VA and no resources.
+                serializer_json.SetPageFaultVaZero();
             }
         }
 
@@ -677,6 +526,9 @@ static bool PerformCrashAnalysis(const Config& user_config)
 
 int main(int argc, char* argv[])
 {
+#ifdef _WIN32
+    SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32);
+#endif
     assert(argv != nullptr);
     bool ret = false;
     if (argv != nullptr)
@@ -702,6 +554,7 @@ int main(int argc, char* argv[])
                 ("internal-barriers", "If specified, include internal barriers in the execution marker tree.", cxxopts::value<bool>(user_config.is_include_internal_barriers))
                 ("all-disassembly", "If specified, the output will include the complete disassembly of all shaders in the SHADER INFO section.", cxxopts::value<bool>(user_config.is_all_disassembly))
                 ("pdb-path", "If specified, provide one or more paths to search for shader debug info files. Multiple paths can be specified.", cxxopts::value<std::vector<std::string>>(user_config.pdb_dir))
+                ("pdb-subdir", "If specified, search through subdirectories of each PDB search path for shader debug info files.", cxxopts::value<bool>(user_config.is_pdb_subdir))
                 ("full-source", "If specified, the output will include the full high level shader code if available.", cxxopts::value<bool>(user_config.is_full_source))
                 ("e,extended-output", "If specified, the text and JSON output will include more verbose information.", cxxopts::value<bool>(user_config.is_extended_output))
                 ("save-code-objects", "If specified, extracts all the Code Object binaries parsed from the input .rgd crash dump file.", cxxopts::value<bool>(user_config.is_save_code_object_binaries))

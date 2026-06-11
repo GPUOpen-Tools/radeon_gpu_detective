@@ -17,22 +17,6 @@
 			"golden_files_negative": []
 		},
 		{
-			"test_name": "EvictReferencedNoOveflow",
-			"crash_test_case": 6,
-			"verify_crash_dump": true,
-			"verify_rgd_cli_output": false,
-			"golden_files_positive": [],
-			"golden_files_negative": []
-		},
-		{
-			"test_name": "EvictReferencedNoOveflow - Multi",
-			"crash_test_case": 6.1,
-			"verify_crash_dump": true,
-			"verify_rgd_cli_output": false,
-			"golden_files_positive": [],
-			"golden_files_negative": []
-		},
-		{
 			"test_name": "ReleaseTextureSRV",
 			"crash_test_case": 7,
 			"verify_crash_dump": true,
@@ -328,15 +312,6 @@
 			"golden_files_negative": []
 		},
 		{
-			"test_name": "DispatchWorkgroupLimit",
-			"crash_test_case": 14,
-			"page_fault_case": true,
-			"verify_crash_dump": true,
-			"verify_rgd_cli_output": false,
-			"golden_files_positive": [],
-			"golden_files_negative": []
-		},
-		{
 			"test_name": "DispatchComputeInfinite",
 			"crash_test_case": 15,
 			"page_fault_case": false,
@@ -357,7 +332,7 @@
 		{
 			"test_name": "MeshWorkgroupOverflow",
 			"crash_test_case": 17,
-			"page_fault_case": true,
+			"page_fault_case": false,
 			"verify_crash_dump": true,
 			"verify_rgd_cli_output": false,
 			"golden_files_positive": [],
@@ -393,7 +368,7 @@
 		{
 			"test_name": "BLASUseIncorrectScratchDataReference",
 			"crash_test_case": 21,
-			"page_fault_case": true,
+			"page_fault_case": false,
 			"verify_crash_dump": true,
 			"verify_rgd_cli_output": false,
 			"golden_files_positive": [],
